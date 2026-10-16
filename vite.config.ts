@@ -3,17 +3,18 @@ import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import { nitro } from "nitro/vite";
 import viteReact from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
-import tsConfigPaths from "vite-tsconfig-paths";
 
 // Standalone Vite configuration for this TanStack Start app.
 //
 // Plugin order matters:
 //   1. @tanstack/devtools-vite  (dev-only, must come first)
 //   2. @tailwindcss/vite
-//   3. vite-tsconfig-paths      (resolves the "@/*" alias from tsconfig.json)
-//   4. @tanstack/react-start/plugin/vite  (router + SSR)
-//   5. nitro/vite               (build-only; bundles the server for deployment)
-//   6. @vitejs/plugin-react
+//   3. @tanstack/react-start/plugin/vite  (router + SSR)
+//   4. nitro/vite               (build-only; bundles the server for deployment)
+//   5. @vitejs/plugin-react
+//
+// The "@/*" -> "./src/*" alias is resolved by Vite natively from tsconfig.json
+// (`resolve.tsconfigPaths`), so no path-alias plugin is needed.
 export default defineConfig(async ({ command, mode }): Promise<UserConfig> => {
   const isBuild = command === "build";
   const isDevBuild = isBuild && mode === "development";
@@ -35,7 +36,6 @@ export default defineConfig(async ({ command, mode }): Promise<UserConfig> => {
   }
 
   plugins.push(tailwindcss());
-  plugins.push(tsConfigPaths({ projects: ["./tsconfig.json"] }));
   plugins.push(
     tanstackStart({
       // Block server-only modules from leaking into the client bundle.
@@ -95,7 +95,8 @@ export default defineConfig(async ({ command, mode }): Promise<UserConfig> => {
       : {}),
     css: { transformer: "lightningcss" },
     resolve: {
-      alias: { "@": `${process.cwd()}/src` },
+      // Read the "@/*" alias from tsconfig.json (Vite 8 built-in).
+      tsconfigPaths: true,
       dedupe: [
         "react",
         "react-dom",
