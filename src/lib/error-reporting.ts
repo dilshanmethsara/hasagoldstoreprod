@@ -1,32 +1,34 @@
-type LovableErrorOptions = {
+type ErrorReporterOptions = {
   mechanism?: "manual" | "onerror" | "unhandledrejection" | "react_error_boundary";
   handled?: boolean;
   severity?: "error" | "warning" | "info";
 };
 
-type LovableEvents = {
+type ErrorReporter = {
   track?: (event: string, properties?: Record<string, unknown>) => string | null;
   captureException?: (
     error: unknown,
     context?: Record<string, unknown>,
-    options?: LovableErrorOptions,
+    options?: ErrorReporterOptions,
   ) => void;
 };
 
 declare global {
   interface Window {
-    __lovableEvents?: LovableEvents;
-    __lovableReportRuntimeError?: (payload: {
-      message: string;
-      stack?: string;
-      filename?: string;
-    }) => void;
+    // Optional host-app hook (e.g. an error-monitoring SDK). When absent, errors
+    // are only logged to the console via the error boundary.
+    __errorReporter?: ErrorReporter;
   }
 }
 
-export function reportLovableError(error: unknown, context: Record<string, unknown> = {}) {
+/**
+ * Forwards a caught error to an optional monitoring hook installed on
+ * `window.__errorReporter`. Safe to call in SSR (no-op) and when no reporter is
+ * present (no-op).
+ */
+export function reportError(error: unknown, context: Record<string, unknown> = {}) {
   if (typeof window === "undefined") return;
-  window.__lovableEvents?.captureException?.(
+  window.__errorReporter?.captureException?.(
     error,
     {
       source: "react_error_boundary",
@@ -39,22 +41,13 @@ export function reportLovableError(error: unknown, context: Record<string, unkno
       severity: "error",
     },
   );
-  // Prod React does not rethrow boundary-caught errors to window.onerror, so the
-  // editor's telemetry never sees them. Forward to lovable.js's reporting hook,
-  // which is present only inside the editor preview.
-  const stack = error instanceof Error ? error.stack : undefined;
-  window.__lovableReportRuntimeError?.({
-    message: describeThrown(error),
-    ...(stack !== undefined && { stack }),
-    filename: window.location.pathname,
-  });
 }
 
 const MAX_SERIALIZED_LENGTH = 2000;
 
-// Loaders and server fns throw raw Responses and plain objects (a Supabase
+// Loaders and server fns throw raw Responses and plain objects (e.g.
 // `{ message, code, details }`), which String() reduces to "[object ...]".
-function describeThrown(error: unknown): string {
+export function describeThrown(error: unknown): string {
   if (error instanceof Response) {
     return `Response ${error.status}${error.url ? ` at ${error.url}` : ""}`;
   }
