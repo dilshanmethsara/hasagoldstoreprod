@@ -1,0 +1,14 @@
+# Storefront roadmap
+- [x] Build shared store styling, navigation, and original placeholder artwork.
+- [x] Build home, game browsing, individual game pages, search, and favorites.
+- [x] Add support, FAQ, and how-it-works pages with truthful sample content.
+- [x] Verify navigation, controls, keyboard access, and screen-size layouts.
+- [x] Elevate the navigation, motion, interaction feedback, and visual depth to a premium modern finish.
+- [x] Verify the floating glass bottom navigation.
+- [x] Add centralized frontend demo accounts, account forms, and protected dashboard navigation.
+- [x] Add dashboard overview, orders, saved Player IDs, favorites, profile, settings, and support shortcut.
+- [x] Add remembered light/dark/system themes across the website.
+- [x] Polish shared controls, loading feedback, toasts, and empty states.
+- [x] Test account flows, protected pages, themes, and every dashboard page.
+- [ ] Build demo admin overview, games, packages, local accounts/IDs, orders, support, and settings.
+- [ ] Verify admin actions and all pages on desktop/mobile in both themes.
