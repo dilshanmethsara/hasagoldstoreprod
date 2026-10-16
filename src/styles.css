@@ -470,6 +470,7 @@
   line-height: 1.18;
   margin: 20px 0 16px;
   letter-spacing: -0.015em;
+  text-wrap: balance;
 }
 
 .hero h1 span {
