@@ -1,5 +1,5 @@
 import diamonds from '@/assets/diamond-world.jpg';
-import strike from '@/assets/strike-world.jpg';
+import bloodStrikeLogo from '@/assets/blood-strike.jpg';
 import battle from '@/assets/battle-world.jpg';
 import ops from '@/assets/ops-world.jpg';
 import ffAcc from '@/assets/ff-account.jpg';
@@ -12,7 +12,7 @@ import codmLogo from '@/assets/call-of-duty-mobile-logo.jpg';
 
 export const games = [
   { id: 'free-fire', name: 'Free Fire', currency: 'Diamonds', image: freefireLogo, tone: 'ice', icon: 'diamond', logo: freefireLogo, packs: [100, 310, 520, 1060, 2180, 5600] },
-  { id: 'blood-strike', name: 'Blood Strike', currency: 'Gold', image: strike, tone: 'ember', icon: 'coins', logo: null, packs: [100, 300, 500, 1000, 2000, 5000] },
+  { id: 'blood-strike', name: 'Blood Strike', currency: 'Gold', image: bloodStrikeLogo, tone: 'ember', icon: 'coins', logo: bloodStrikeLogo, packs: [100, 300, 500, 1000, 2000, 5000] },
   { id: 'pubg-mobile', name: 'PUBG Mobile', currency: 'UC', image: pubgLogo, tone: 'olive', icon: 'coins', logo: pubgLogo, packs: [60, 325, 660, 1800, 3850, 8100] },
   { id: 'call-of-duty-mobile', name: 'Call of Duty: Mobile', currency: 'CP', image: codmLogo, tone: 'violet', icon: 'coins', logo: codmLogo, packs: [80, 400, 800, 2000, 4000, 8000] },
 ] as const;

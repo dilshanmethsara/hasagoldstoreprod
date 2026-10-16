@@ -1,12 +1,12 @@
-﻿import { createFileRoute, Link } from '@tanstack/react-router';
+import { createFileRoute, Link } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import {
-  Activity, AlertTriangle, BadgeCheck, CheckCircle2,
-  ChevronDown, ChevronRight, Clock, ExternalLink,
-  Globe, HardDrive, RefreshCw, Server, Shield,
-  Wifi, Zap, Bell, TrendingUp, Info
+  Activity, AlertTriangle, ArrowLeft, BadgeCheck, Bell, CheckCircle2,
+  ChevronDown, ChevronRight, Clock, ExternalLink, Globe, HardDrive, Info,
+  RefreshCw, Server, Shield, TrendingUp, Wifi, Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { SupportBand } from '@/components/store-ui';
 import { pageHead } from '@/lib/store-data';
 
 export const Route = createFileRoute('/status')({
@@ -46,6 +46,18 @@ const INCIDENTS: Incident[] = [
 
 const STATUS_LABEL: Record<ServiceStatus, string> = { operational: 'Operational', degraded: 'Degraded', outage: 'Outage', maintenance: 'Maintenance' };
 const SEVERITY_LABEL: Record<string, string> = { minor: 'Minor', major: 'Major', critical: 'Critical', maintenance: 'Maintenance' };
+const HEADLINE: Record<ServiceStatus, string> = {
+  operational: 'All systems operational',
+  degraded: 'Partial system degradation',
+  maintenance: 'Scheduled maintenance in progress',
+  outage: 'Service disruption detected',
+};
+const STATE_NOTE: Record<ServiceStatus, string> = {
+  operational: 'No active issues',
+  degraded: 'Elevated latency detected',
+  maintenance: 'Scheduled work in progress',
+  outage: 'Service disruption active',
+};
 
 function overallStatus(s: Service[]): ServiceStatus {
   if (s.some(x => x.status === 'outage')) return 'outage';
@@ -64,7 +76,7 @@ function StatusPill({ status }: { status: ServiceStatus }) {
 }
 
 function IncidentCard({ incident }: { incident: Incident }) {
-  const [open, setOpen] = useState(incident.id === 'inc-002');
+  const [open, setOpen] = useState(incident.status !== 'resolved');
   return (
     <div className={`incident-card inc-severity-${incident.severity} inc-status-${incident.status}`}>
       <button className="incident-header" onClick={() => setOpen(!open)} aria-expanded={open}>
@@ -89,29 +101,34 @@ function StatusPage() {
   const [refreshing, setRefreshing] = useState(false);
   const overall = overallStatus(SERVICES);
   const uptime = (SERVICES.reduce((s, v) => s + v.uptime, 0) / SERVICES.length).toFixed(2);
+  const avgLatency = Math.round(SERVICES.reduce((s, v) => s + v.latency, 0) / SERVICES.length);
   const operationalCount = SERVICES.filter(s => s.status === 'operational').length;
+  const activeIncidents = INCIDENTS.filter(i => i.status === 'investigating' || i.status === 'monitoring').length;
 
   function refresh() { setRefreshing(true); setTimeout(() => { setLastChecked(new Date()); setRefreshing(false); }, 900); }
   useEffect(() => { const id = setInterval(() => setLastChecked(new Date()), 60_000); return () => clearInterval(id); }, []);
 
   return (
-    <div className="container">
-      <div className={`status-banner status-banner-${overall}`}>
-        <div className="status-banner-inner">
-          <div className="status-banner-icon-wrap">
-            {overall === 'operational' ? <CheckCircle2 size={28}/> : <AlertTriangle size={28}/>}
+    <div className="container page-content status-page">
+      <div className={`status-hero status-hero-${overall}`}>
+        <div className="status-hero-glow status-hero-glow-a" aria-hidden="true"/>
+        <div className="status-hero-glow status-hero-glow-b" aria-hidden="true"/>
+        <div className="status-hero-body">
+          <span className="status-hero-eyebrow"><span className={`status-live-dot live-${overall}`}/> Live service status</span>
+          <h1 className="status-hero-title">{HEADLINE[overall]}</h1>
+          <p className="status-hero-sub">Real-time health, uptime history, and incident reporting for every HASA GOLD STORE service. Metrics refresh automatically each minute.</p>
+          <div className="status-hero-trust">
+            <span><Activity size={13}/> {operationalCount} of {SERVICES.length} services online</span>
+            <span><TrendingUp size={13}/> {uptime}% average uptime</span>
+            <span><Globe size={13}/> 5 global edge regions</span>
           </div>
-          <div className="status-banner-content">
-            <h1 className="status-banner-title">
-              {overall === 'operational' ? 'All systems operational' : overall === 'degraded' ? 'Partial system degradation' : overall === 'maintenance' ? 'Scheduled maintenance' : 'Service disruption detected'}
-            </h1>
-            <p className="status-banner-sub">
-              {operationalCount} of {SERVICES.length} services running normally
-              <span className="status-divider">·</span>
-              Avg. uptime <strong>{uptime}%</strong> over the last 90 days
-            </p>
+        </div>
+        <div className="status-hero-aside">
+          <div className={`status-hero-state state-${overall}`}>
+            <span className="status-hero-state-icon">{overall === 'operational' ? <CheckCircle2 size={20}/> : <AlertTriangle size={20}/>}</span>
+            <span className="status-hero-state-text"><strong>{STATUS_LABEL[overall]}</strong><small>{STATE_NOTE[overall]}</small></span>
           </div>
-          <div className="status-banner-meta">
+          <div className="status-hero-actions">
             <span className="status-last-checked"><Clock size={11}/> Last checked {lastChecked.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</span>
             <Button variant="outline" size="sm" className={`status-refresh-btn ${refreshing ? 'refreshing' : ''}`} onClick={refresh} disabled={refreshing} aria-label="Refresh status"><RefreshCw size={13}/> Refresh</Button>
           </div>
@@ -119,10 +136,26 @@ function StatusPage() {
       </div>
 
       <div className="status-metrics">
-        <div className="status-metric-tile"><span className="metric-label">System Uptime</span><span className="metric-value metric-green">{uptime}%</span><span className="metric-period">Last 90 days</span></div>
-        <div className="status-metric-tile"><span className="metric-label">Services Online</span><span className="metric-value metric-green">{operationalCount}/{SERVICES.length}</span><span className="metric-period">All components</span></div>
-        <div className="status-metric-tile"><span className="metric-label">Avg. Response</span><span className="metric-value metric-blue">{Math.round(SERVICES.reduce((s, v) => s + v.latency, 0) / SERVICES.length)} ms</span><span className="metric-period">Across all endpoints</span></div>
-        <div className="status-metric-tile"><span className="metric-label">Active Incidents</span><span className="metric-value metric-green">0</span><span className="metric-period">No ongoing issues</span></div>
+        <div className="status-metric-tile metric-tone-ok">
+          <div className="metric-head"><span className="metric-icon"><TrendingUp size={15}/></span><span className="metric-label">System Uptime</span></div>
+          <span className="metric-value">{uptime}%</span>
+          <span className="metric-period">Rolling 90-day average</span>
+        </div>
+        <div className="status-metric-tile metric-tone-primary">
+          <div className="metric-head"><span className="metric-icon"><Server size={15}/></span><span className="metric-label">Services Online</span></div>
+          <span className="metric-value">{operationalCount}/{SERVICES.length}</span>
+          <span className="metric-period">All monitored components</span>
+        </div>
+        <div className="status-metric-tile metric-tone-primary">
+          <div className="metric-head"><span className="metric-icon"><Zap size={15}/></span><span className="metric-label">Avg. Response</span></div>
+          <span className="metric-value">{avgLatency} ms</span>
+          <span className="metric-period">Across all endpoints</span>
+        </div>
+        <div className={`status-metric-tile ${activeIncidents > 0 ? 'metric-tone-warn' : 'metric-tone-ok'}`}>
+          <div className="metric-head"><span className="metric-icon"><Shield size={15}/></span><span className="metric-label">Active Incidents</span></div>
+          <span className="metric-value">{activeIncidents}</span>
+          <span className="metric-period">{activeIncidents > 0 ? 'Being investigated' : 'No ongoing issues'}</span>
+        </div>
       </div>
 
       <section className="status-section">
@@ -181,9 +214,11 @@ function StatusPage() {
       </div>
 
       <div className="status-back-row">
-        <Button variant="ghost" asChild><Link to="/"><ChevronRight size={14} style={{ transform: 'rotate(180deg)' }}/> Back to store</Link></Button>
+        <Button variant="ghost" asChild><Link to="/"><ArrowLeft size={14}/> Back to store</Link></Button>
         <span className="status-powered">Status powered by HASA GOLD STORE monitoring</span>
       </div>
+
+      <SupportBand/>
     </div>
   );
 }

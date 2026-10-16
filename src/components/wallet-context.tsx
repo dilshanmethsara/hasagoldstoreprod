@@ -51,41 +51,42 @@ const DEFAULT_TRANSACTIONS: WalletTransaction[] = [
 const WalletContext = createContext<WalletContextType | null>(null);
 
 export function WalletProvider({ children }: { children: ReactNode }) {
-  const [balance, setBalance] = useState<number>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY_BALANCE);
-      if (saved !== null) {
-        const parsed = Number(saved);
-        if (!isNaN(parsed)) return parsed;
-      }
-    } catch {
-      // fallback
-    }
-    return DEFAULT_INITIAL_BALANCE;
-  });
+  // Always start from the deterministic defaults so the server render and the
+  // first client render match. Persisted values are loaded in the effect below.
+  const [balance, setBalance] = useState<number>(DEFAULT_INITIAL_BALANCE);
+  const [transactions, setTransactions] = useState<WalletTransaction[]>(DEFAULT_TRANSACTIONS);
+  const [hydrated, setHydrated] = useState(false);
 
-  const [transactions, setTransactions] = useState<WalletTransaction[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY_TXNS);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch {
-      // fallback
-    }
-    return DEFAULT_TRANSACTIONS;
-  });
-
-  // Save changes to localStorage
+  // Restore any saved wallet state once mounted on the client.
   useEffect(() => {
+    try {
+      const savedBalance = localStorage.getItem(STORAGE_KEY_BALANCE);
+      if (savedBalance !== null) {
+        const parsed = Number(savedBalance);
+        if (!isNaN(parsed)) setBalance(parsed);
+      }
+      const savedTxns = localStorage.getItem(STORAGE_KEY_TXNS);
+      if (savedTxns) {
+        const parsed = JSON.parse(savedTxns);
+        if (Array.isArray(parsed)) setTransactions(parsed);
+      }
+    } catch {
+      // fallback to defaults
+    }
+    setHydrated(true);
+  }, []);
+
+  // Persist changes, but only after the initial restore has run so we never
+  // overwrite saved data with the defaults on first paint.
+  useEffect(() => {
+    if (!hydrated) return;
     try {
       localStorage.setItem(STORAGE_KEY_BALANCE, balance.toString());
       localStorage.setItem(STORAGE_KEY_TXNS, JSON.stringify(transactions));
     } catch {
       // ignore in incognito/storage failure
     }
-  }, [balance, transactions]);
+  }, [balance, transactions, hydrated]);
 
   function formatAmount(amount: number) {
     return `Rs. ${amount.toLocaleString()}`;
