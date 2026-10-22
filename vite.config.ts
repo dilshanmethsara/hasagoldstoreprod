@@ -171,9 +171,18 @@ export default defineConfig(async ({ command, mode }): Promise<UserConfig> => {
       allowedHosts: ["fine-frogs-kneel.loca.lt"],
       // Keep generated build output out of the dev watcher. These dirs are
       // gitignored, and on Windows a concurrent build writing into them raises
-      // EBUSY on the watched file, which crashes the dev server.
+      // EBUSY on the watched file, which crashes the dev server. Binary assets
+      // are excluded for the same reason: an image opened in another app (file
+      // preview, editor, Explorer thumbnailing) locks the file and takes the
+      // dev server down with EBUSY. Refresh the page after changing an image.
       watch: {
-        ignored: ["**/.output/**", "**/.wrangler/**", "**/.nitro/**", "**/.vinxi/**"],
+        ignored: [
+          "**/.output/**",
+          "**/.wrangler/**",
+          "**/.nitro/**",
+          "**/.vinxi/**",
+          "**/src/assets/**",
+        ],
       },
     },
   };

@@ -282,7 +282,8 @@ export const createOrder = createServerFn({ method: "POST" })
       paymentMethod: data.paymentMethod,
       paymentRecipient,
       emailNotificationSent,
-      nexauraSubmission,
+      // exactOptionalPropertyTypes: omit the key instead of passing undefined.
+      ...(nexauraSubmission ? { nexauraSubmission } : {}),
     };
   });
 

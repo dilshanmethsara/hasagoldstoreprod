@@ -168,11 +168,14 @@ export function GameTopUpOrder({
           setValidatedPlayerId(trimmed);
           return;
         }
+        // Only Free Fire reports where the name came from; Blood Strike does not.
+        const sourceValue =
+          "source" in result ? (result as { source?: unknown }).source : undefined;
         setFreeFireLookup({
           status: "verified",
           name: result.name,
           region: result.region,
-          source: "source" in result ? result.source : "live",
+          source: sourceValue === "saved" ? "saved" : "live",
         });
         setValidatedPlayerId(trimmed);
       } catch (cause) {

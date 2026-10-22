@@ -75,7 +75,7 @@ export function DashboardLayout() {
   const navigate = useNavigate();
   useEffect(() => {
     if (ready && !user && pathname.startsWith("/dashboard"))
-      navigate({ to: "/login", search: { redirect: pathname }, replace: true });
+      navigate({ to: "/login", search: { redirect: pathname, verified: false }, replace: true });
   }, [ready, user, pathname, navigate]);
   if (!ready || !user) return <DashboardSkeleton />;
   return (
@@ -517,12 +517,12 @@ export function DashboardOrders() {
                           ord.nexauraStatus ??
                           "Awaiting payment"}
                         {nexauraStatuses[ord.orderId]?.note
-                          ? ` · ${nexauraStatuses[ord.orderId].note}`
+                          ? ` · ${nexauraStatuses[ord.orderId]?.note ?? ""}`
                           : ord.nexauraNote
                             ? ` · ${ord.nexauraNote}`
                             : ""}
                         {nexauraStatuses[ord.orderId]?.error
-                          ? ` · ${nexauraStatuses[ord.orderId].error}`
+                          ? ` · ${nexauraStatuses[ord.orderId]?.error ?? ""}`
                           : ""}
                       </span>
                     </div>

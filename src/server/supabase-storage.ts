@@ -27,7 +27,9 @@ export function getSupabaseProofBucket(): string {
   );
 }
 
-export async function createProofUploadToken(path: string): Promise<{ signedUrl: string; token: string }> {
+export async function createProofUploadToken(
+  path: string,
+): Promise<{ signedUrl: string; token: string }> {
   const { data, error } = await getSupabaseClient()
     .storage.from(getSupabaseProofBucket())
     .createSignedUploadUrl(path, { upsert: true });

@@ -78,7 +78,7 @@ export function AccountMenu() {
       ) : (
         <div className="account-links">
           <Button asChild variant="ghost" className="login-link">
-            <Link to="/login" search={{ redirect: "/dashboard" }}>
+            <Link to="/login" search={{ redirect: "/dashboard", verified: false }}>
               <UserRound />
               <span>Login</span>
             </Link>
