@@ -11,10 +11,20 @@ node_modules
 dist
 dist-ssr
 .output
+.vercel
 .vinxi
 .tanstack/**
 .nitro
 *.local
+
+# Local environment files (real Firebase config values live here / in Vercel).
+.env
+.env.*
+!.env.example
+# Service account keys — NEVER commit these
+*adminsdk*.json
+*serviceAccount*.json
+*service-account*.json
 
 # Wrangler / Cloudflare
 .wrangler/

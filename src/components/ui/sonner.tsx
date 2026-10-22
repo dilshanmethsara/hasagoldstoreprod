@@ -1,5 +1,5 @@
-import { Toaster as Sonner } from 'sonner';
-import { AlertCircle, Check, Info, TriangleAlert, X } from 'lucide-react';
+import { Toaster as Sonner } from "sonner";
+import { AlertCircle, Check, Info, TriangleAlert, X } from "lucide-react";
 
 type ToasterProps = React.ComponentProps<typeof Sonner>;
 
@@ -24,15 +24,15 @@ const Toaster = ({ ...props }: ToasterProps) => {
       }}
       toastOptions={{
         classNames: {
-          toast: 'hasa-toast',
-          title: 'hasa-toast-title',
-          description: 'hasa-toast-desc',
-          icon: 'hasa-toast-icon',
-          closeButton: 'hasa-toast-close',
-          success: 'is-success',
-          error: 'is-error',
-          info: 'is-info',
-          warning: 'is-warning',
+          toast: "hasa-toast",
+          title: "hasa-toast-title",
+          description: "hasa-toast-desc",
+          icon: "hasa-toast-icon",
+          closeButton: "hasa-toast-close",
+          success: "is-success",
+          error: "is-error",
+          info: "is-info",
+          warning: "is-warning",
         },
       }}
       {...props}

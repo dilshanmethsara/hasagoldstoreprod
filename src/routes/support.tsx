@@ -1,27 +1,27 @@
-import { createFileRoute, Link } from '@tanstack/react-router';
-import { useState } from 'react';
-import { Search, MessageCircle, X, Shield, RotateCcw } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { PageIntro, FAQ } from '@/components/store-ui';
-import { pageHead } from '@/lib/store-data';
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useState } from "react";
+import { Search, MessageCircle, X, Shield, RotateCcw } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { PageIntro, FAQ } from "@/components/store-ui";
+import { pageHead } from "@/lib/store-data";
 
-export const Route = createFileRoute('/support')({
+export const Route = createFileRoute("/support")({
   head: () =>
     pageHead(
-      'Support & FAQ',
-      'Find answers about games, sample packages, favorites, and the HASA GOLD STORE preview.'
+      "Support & FAQ",
+      "Find answers about games, account preferences, and order availability at HASA GOLD STORE.",
     ),
   component: SupportPage,
 });
 
 function SupportPage() {
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState("");
   return (
     <div className="container page-content">
       <PageIntro
-        eyebrow="WE’RE HERE TO HELP"
+        eyebrow="SUPPORT & FAQ"
         title="Good questions. Clear answers."
-        description="Everything you need to know about exploring the store preview."
+        description="Information about catalog browsing, orders, and available account features."
       />
       <div className="support-layout">
         <aside className="support-aside">
@@ -31,20 +31,31 @@ function SupportPage() {
           <div className="notice">
             <strong>Support contact</strong>
             <br />
-            Official contact details have not been provided yet. No contact channel is currently available.
+            Official contact details have not been provided yet. No contact channel is currently
+            available.
           </div>
-          <div style={{ marginTop: '24px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <span style={{ fontSize: '11px', fontWeight: '800', color: 'var(--muted-foreground)', letterSpacing: '1px', textTransform: 'uppercase' }}>
+          <div style={{ marginTop: "24px", display: "flex", flexDirection: "column", gap: "8px" }}>
+            <span
+              style={{
+                fontSize: "11px",
+                fontWeight: "800",
+                color: "var(--muted-foreground)",
+                letterSpacing: "1px",
+                textTransform: "uppercase",
+              }}
+            >
               Legal & Store Policies
             </span>
-            <Button variant="outline" asChild size="sm" style={{ justifyContent: 'flex-start' }}>
+            <Button variant="outline" asChild size="sm" style={{ justifyContent: "flex-start" }}>
               <Link to="/privacy-policy">
-                <Shield size={14} style={{ marginRight: '8px', color: 'var(--primary)' }} /> Privacy Policy
+                <Shield size={14} style={{ marginRight: "8px", color: "var(--primary)" }} /> Privacy
+                Policy
               </Link>
             </Button>
-            <Button variant="outline" asChild size="sm" style={{ justifyContent: 'flex-start' }}>
+            <Button variant="outline" asChild size="sm" style={{ justifyContent: "flex-start" }}>
               <Link to="/refund-policy">
-                <RotateCcw size={14} style={{ marginRight: '8px', color: 'var(--primary)' }} /> Refund Policy
+                <RotateCcw size={14} style={{ marginRight: "8px", color: "var(--primary)" }} />{" "}
+                Refund Policy
               </Link>
             </Button>
           </div>
@@ -63,7 +74,7 @@ function SupportPage() {
                 variant="ghost"
                 size="icon"
                 aria-label="Clear FAQ search"
-                onClick={() => setQuery('')}
+                onClick={() => setQuery("")}
               >
                 <X />
               </Button>

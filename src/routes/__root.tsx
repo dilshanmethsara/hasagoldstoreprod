@@ -5,6 +5,7 @@ import {
   createRootRouteWithContext,
   useRouter,
   useLocation,
+  useNavigate,
   HeadContent,
   Scripts,
   type ErrorComponentProps,
@@ -13,13 +14,13 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportError } from "../lib/error-reporting";
-import { StoreProvider } from '@/components/store-context';
-import { StoreHeader, StoreFooter, BottomNavigation } from '@/components/store-ui';
-import { Button } from '@/components/ui/button';
-import { DemoAccountProvider } from '@/components/demo-account';
-import { AdminProvider } from '@/components/admin-context';
-import { WalletProvider } from '@/components/wallet-context';
-import { Toaster } from '@/components/ui/sonner';
+import { StoreProvider } from "@/components/store-context";
+import { StoreHeader, StoreFooter, BottomNavigation } from "@/components/store-ui";
+import { Button } from "@/components/ui/button";
+import { AccountProvider, useAccount } from "@/components/account-context";
+import { WalletProvider } from "@/components/wallet-context";
+import { Toaster } from "@/components/ui/sonner";
+import hasaLogo from "@/assets/newhasalogo.png";
 
 function NotFoundComponent() {
   return (
@@ -96,10 +97,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         rel: "stylesheet",
         href: appCss,
       },
-      { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
-      { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
-      { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossOrigin: 'anonymous' },
-      { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@400;500;600;700;800&display=swap' },
+      { rel: "icon", href: hasaLogo, type: "image/png" },
+      { rel: "preconnect", href: "https://fonts.googleapis.com" },
+      { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
+      {
+        rel: "stylesheet",
+        href: "https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@400;500;600;700;800&display=swap",
+      },
     ],
   }),
   shellComponent: RootShell,
@@ -125,24 +129,65 @@ function RootShell({ children }: { children: ReactNode }) {
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   const { pathname } = useLocation();
-  const admin = pathname.startsWith('/admin');
+  const admin = pathname.startsWith("/admin");
 
   return (
     <QueryClientProvider client={queryClient}>
-      <DemoAccountProvider>
+      <AccountProvider>
         <StoreProvider>
-          <AdminProvider>
-            <WalletProvider>
-              <a href="#main-content" className="skip-link">Skip to content</a>
-              {admin ? <Outlet/> : <><StoreHeader />
-              <main id="main-content"><Outlet /></main>
-              <StoreFooter />
-              <BottomNavigation /></>}
-              <Toaster />
-            </WalletProvider>
-          </AdminProvider>
+          <WalletBridge admin={admin} />
         </StoreProvider>
-      </DemoAccountProvider>
+      </AccountProvider>
     </QueryClientProvider>
+  );
+}
+
+/** Pass the authenticated Firebase UID to the wallet subscription. */
+function WalletBridge({ admin }: { admin: boolean }) {
+  const { uid, user, ready, profileCompletionInProgress } = useAccount();
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const mustCompleteProfile =
+    ready && !profileCompletionInProgress && user?.profileComplete === false;
+
+  useEffect(() => {
+    if (mustCompleteProfile && pathname !== "/complete-profile") {
+      void navigate({
+        to: "/complete-profile",
+        search: { redirect: "/dashboard" },
+        replace: true,
+      });
+    }
+  }, [mustCompleteProfile, pathname, navigate]);
+
+  return (
+    <WalletProvider uid={uid}>
+      {mustCompleteProfile && pathname !== "/complete-profile" ? (
+        <main id="main-content" className="container account-page">
+          <div className="empty-state" aria-busy="true">
+            <p>Redirecting you to finish setting up your account…</p>
+          </div>
+        </main>
+      ) : (
+        <>
+          <a href="#main-content" className="skip-link">
+            Skip to content
+          </a>
+          {admin ? (
+            <Outlet />
+          ) : (
+            <>
+              <StoreHeader />
+              <main id="main-content">
+                <Outlet />
+              </main>
+              <StoreFooter />
+              <BottomNavigation />
+            </>
+          )}
+          <Toaster />
+        </>
+      )}
+    </WalletProvider>
   );
 }

@@ -1,0 +1,40 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function orderData(orderId) {
+      return firestore.get(
+        /databases/(default)/documents/orders/$(orderId)
+      ).data;
+    }
+
+    function canUploadProof(uid, orderId) {
+      let order = orderData(orderId);
+      return request.auth != null
+        && request.auth.uid == uid
+        && order.customerUid == uid
+        && order.paymentMethod == 'ezcash'
+        && order.paymentStatus in ['unpaid', 'failed', 'proof_rejected'];
+    }
+
+    function canReadProof(uid, orderId) {
+      let order = orderData(orderId);
+      return request.auth != null
+        && request.auth.uid == uid
+        && order.customerUid == uid;
+    }
+
+    match /payment-proofs/{uid}/{orderId}/proof {
+      allow read: if canReadProof(uid, orderId);
+      allow create, update: if canUploadProof(uid, orderId)
+        && request.resource.size > 0
+        && request.resource.size <= 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp)');
+      allow delete: if false;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

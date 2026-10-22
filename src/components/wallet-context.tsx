@@ -1,164 +1,212 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { toast } from 'sonner';
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import {
+  subscribeWalletAdjustments,
+  subscribeWalletBalance,
+  subscribeWalletDeposits,
+  subscribeWalletOrders,
+} from "@/lib/firestore";
+import type { OrderDoc, WalletAdjustmentDoc, WalletDepositDoc } from "@/lib/firestore-schema";
 
 export interface WalletTransaction {
   id: string;
-  type: 'deposit' | 'purchase' | 'refund' | 'cashback';
+  referenceNumber: string;
+  type: "deposit" | "adjustment" | "purchase";
   title: string;
   amount: number;
   date: string;
+  createdAt: number | null;
   method: string;
-  orderId?: string | undefined;
-  status: 'Completed' | 'Pending';
+  status: "Completed" | "Pending" | "Failed";
+  reason?: string;
 }
 
 interface WalletContextType {
   balance: number;
   currency: string;
   transactions: WalletTransaction[];
-  deposit: (amount: number, method: string) => boolean;
-  pay: (amount: number, description: string, orderId?: string) => boolean;
-  canAfford: (amount: number) => boolean;
   formatAmount: (amount: number) => string;
-  resetWallet: () => void;
+  isLoaded: boolean;
+  error: string | null;
+  historyError: string | null;
 }
 
-const STORAGE_KEY_BALANCE = 'hasa-wallet-balance-v2';
-const STORAGE_KEY_TXNS = 'hasa-wallet-transactions-v2';
-const DEFAULT_INITIAL_BALANCE = 5000; // Rs. 5,000 demo credit
+function formatTs(ts: number | null): string {
+  if (!ts) return "—";
+  const d = new Date(ts);
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffMin = Math.floor(diffMs / 60_000);
+  if (diffMin < 1) return "Just now";
+  if (diffMin < 60) return `${diffMin} min ago`;
+  const diffH = Math.floor(diffMin / 60);
+  if (diffH < 24)
+    return `Today, ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+  return d.toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
+}
 
-const DEFAULT_TRANSACTIONS: WalletTransaction[] = [
-  {
-    id: 'TXN-9041',
-    type: 'deposit',
-    title: 'Wallet Deposit via Easypaisa',
-    amount: 4000,
-    date: 'Yesterday, 4:20 PM',
-    method: 'Easypaisa',
-    status: 'Completed',
-  },
-  {
-    id: 'TXN-9040',
-    type: 'cashback',
-    title: 'HASA Gold VIP Welcome Bonus',
-    amount: 1000,
-    date: 'Yesterday, 4:18 PM',
-    method: 'HASA Rewards',
-    status: 'Completed',
-  },
-];
+function depositDocToTransaction(deposit: WalletDepositDoc): WalletTransaction {
+  return {
+    id: deposit.depositId,
+    referenceNumber: deposit.referenceNumber ?? "",
+    type: "deposit",
+    title: `${deposit.method === "ezcash" ? "eZ Cash" : deposit.method} wallet deposit`,
+    amount: deposit.status === "credited" ? deposit.creditedLkr : 0,
+    date: formatTs(deposit.createdAt),
+    createdAt: deposit.createdAt,
+    method: deposit.method === "ezcash" ? "eZ Cash" : deposit.method,
+    status:
+      deposit.status === "credited"
+        ? "Completed"
+        : deposit.status === "failed"
+          ? "Failed"
+          : "Pending",
+  };
+}
+
+function adjustmentDocToTransaction(adjustment: WalletAdjustmentDoc): WalletTransaction {
+  return {
+    id: adjustment.adjustmentId,
+    referenceNumber: "",
+    type: "adjustment",
+    title: adjustment.amountLkr > 0 ? "Admin credit" : "Admin deduction",
+    amount: adjustment.amountLkr,
+    date: formatTs(adjustment.createdAt),
+    createdAt: adjustment.createdAt,
+    method: "Admin adjustment",
+    status: "Completed",
+    reason: adjustment.reason,
+  };
+}
+
+function orderDocToTransaction(order: OrderDoc): WalletTransaction | null {
+  if (order.paymentMethod !== "wallet") return null;
+  return {
+    id: order.orderId,
+    referenceNumber: order.orderId,
+    type: "purchase",
+    title: `${order.gameName} top-up`,
+    amount: -order.pricePkr,
+    date: formatTs(order.createdAt),
+    createdAt: order.createdAt,
+    method: "Wallet payment",
+    status: "Completed",
+    reason: order.packageName,
+  };
+}
 
 const WalletContext = createContext<WalletContextType | null>(null);
 
-export function WalletProvider({ children }: { children: ReactNode }) {
-  // Always start from the deterministic defaults so the server render and the
-  // first client render match. Persisted values are loaded in the effect below.
-  const [balance, setBalance] = useState<number>(DEFAULT_INITIAL_BALANCE);
-  const [transactions, setTransactions] = useState<WalletTransaction[]>(DEFAULT_TRANSACTIONS);
-  const [hydrated, setHydrated] = useState(false);
+export function WalletProvider({ children, uid }: { children: ReactNode; uid?: string | null }) {
+  const [balance, setBalance] = useState(0);
+  const [deposits, setDeposits] = useState<WalletDepositDoc[]>([]);
+  const [adjustments, setAdjustments] = useState<WalletAdjustmentDoc[]>([]);
+  const [orders, setOrders] = useState<OrderDoc[]>([]);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
-  // Restore any saved wallet state once mounted on the client.
   useEffect(() => {
-    try {
-      const savedBalance = localStorage.getItem(STORAGE_KEY_BALANCE);
-      if (savedBalance !== null) {
-        const parsed = Number(savedBalance);
-        if (!isNaN(parsed)) setBalance(parsed);
+    setError(null);
+    setHistoryError(null);
+    setBalance(0);
+    setDeposits([]);
+    setAdjustments([]);
+    setOrders([]);
+    if (!uid) {
+      setIsLoaded(true);
+      return;
+    }
+
+    setIsLoaded(false);
+    let balanceReady = false;
+    let depositsReady = false;
+    let adjustmentsReady = false;
+    let ordersReady = false;
+    const setLoadError = (cause: Error, source: "balance" | "history") => {
+      console.error(`Could not load wallet ${source}:`, cause);
+      const errorCode = (cause as Error & { code?: string }).code;
+      const message =
+        errorCode === "permission-denied"
+          ? source === "balance"
+            ? "Firestore denied wallet balance access. Confirm the signed-in UID and deploy the owner-only Firestore rules."
+            : "Firestore denied wallet history access. Deploy the updated Firestore rules, including wallet adjustment access."
+          : errorCode === "failed-precondition"
+            ? "Wallet data needs a Firestore index. Deploy the indexes from firestore.indexes.json."
+            : `Wallet ${source} could not be loaded. Check your connection and retry.`;
+      if (source === "balance") {
+        setError(message);
+        balanceReady = true;
+      } else {
+        setHistoryError(message);
       }
-      const savedTxns = localStorage.getItem(STORAGE_KEY_TXNS);
-      if (savedTxns) {
-        const parsed = JSON.parse(savedTxns);
-        if (Array.isArray(parsed)) setTransactions(parsed);
-      }
-    } catch {
-      // fallback to defaults
-    }
-    setHydrated(true);
-  }, []);
-
-  // Persist changes, but only after the initial restore has run so we never
-  // overwrite saved data with the defaults on first paint.
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      localStorage.setItem(STORAGE_KEY_BALANCE, balance.toString());
-      localStorage.setItem(STORAGE_KEY_TXNS, JSON.stringify(transactions));
-    } catch {
-      // ignore in incognito/storage failure
-    }
-  }, [balance, transactions, hydrated]);
-
-  function formatAmount(amount: number) {
-    return `Rs. ${amount.toLocaleString()}`;
-  }
-
-  function canAfford(amount: number) {
-    return balance >= amount;
-  }
-
-  function deposit(amount: number, method: string) {
-    if (amount <= 0) {
-      toast.error('Deposit amount must be greater than 0.');
-      return false;
-    }
-
-    const newTxnId = `TXN-${Math.floor(1000 + Math.random() * 9000)}`;
-    const newTxn: WalletTransaction = {
-      id: newTxnId,
-      type: 'deposit',
-      title: `Wallet Top-Up via ${method}`,
-      amount,
-      date: 'Just now',
-      method,
-      status: 'Completed',
+      if (depositsReady && adjustmentsReady && ordersReady && balanceReady) setIsLoaded(true);
     };
-
-    setBalance(prev => prev + amount);
-    setTransactions(prev => [newTxn, ...prev]);
-    toast.success(`🎉 ${formatAmount(amount)} successfully added to your HASA Wallet via ${method}!`);
-    return true;
-  }
-
-  function pay(amount: number, description: string, orderId?: string) {
-    if (balance < amount) {
-      toast.error(`Insufficient wallet balance. You need ${formatAmount(amount)}, but have ${formatAmount(balance)}.`);
-      return false;
-    }
-
-    const newTxnId = `TXN-${Math.floor(1000 + Math.random() * 9000)}`;
-    const newTxn: WalletTransaction = {
-      id: newTxnId,
-      type: 'purchase',
-      title: description,
-      amount: -amount,
-      date: 'Just now',
-      method: 'HASA Gold Wallet',
-      orderId,
-      status: 'Completed',
+    const onBalance = (value: number) => {
+      setBalance(value);
+      balanceReady = true;
+      if (depositsReady && adjustmentsReady && ordersReady) setIsLoaded(true);
     };
+    const onDeposits = (value: WalletDepositDoc[]) => {
+      setDeposits(value);
+      depositsReady = true;
+      if (balanceReady && adjustmentsReady && ordersReady) setIsLoaded(true);
+    };
+    const onAdjustments = (value: WalletAdjustmentDoc[]) => {
+      setAdjustments(value);
+      adjustmentsReady = true;
+      if (balanceReady && depositsReady && ordersReady) setIsLoaded(true);
+    };
+    const onOrders = (value: OrderDoc[]) => {
+      setOrders(value);
+      ordersReady = true;
+      if (balanceReady && depositsReady && adjustmentsReady) setIsLoaded(true);
+    };
+    const onBalanceError = (cause: Error) => setLoadError(cause, "balance");
+    const onDepositsError = (cause: Error) => {
+      depositsReady = true;
+      setLoadError(cause, "history");
+    };
+    const onAdjustmentsError = (cause: Error) => {
+      adjustmentsReady = true;
+      setLoadError(cause, "history");
+    };
+    const onOrdersError = (cause: Error) => {
+      ordersReady = true;
+      setLoadError(cause, "history");
+    };
+    const unsubscribeBalance = subscribeWalletBalance(uid, onBalance, onBalanceError);
+    const unsubscribeDeposits = subscribeWalletDeposits(uid, onDeposits, onDepositsError);
+    const unsubscribeAdjustments = subscribeWalletAdjustments(
+      uid,
+      onAdjustments,
+      onAdjustmentsError,
+    );
+    const unsubscribeOrders = subscribeWalletOrders(uid, onOrders, onOrdersError);
+    return () => {
+      unsubscribeBalance();
+      unsubscribeDeposits();
+      unsubscribeAdjustments();
+      unsubscribeOrders();
+    };
+  }, [uid]);
 
-    setBalance(prev => prev - amount);
-    setTransactions(prev => [newTxn, ...prev]);
-    return true;
-  }
-
-  function resetWallet() {
-    setBalance(DEFAULT_INITIAL_BALANCE);
-    setTransactions(DEFAULT_TRANSACTIONS);
-    toast.success('Wallet demo balance reset to Rs. 5,000.');
-  }
+  const transactions = [
+    ...deposits.map(depositDocToTransaction),
+    ...adjustments.map(adjustmentDocToTransaction),
+    ...orders.map(orderDocToTransaction).filter((transaction) => transaction !== null),
+  ].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+  const formatAmount = (amount: number) => `Rs. ${amount.toLocaleString()}`;
 
   return (
     <WalletContext.Provider
       value={{
         balance,
-        currency: 'Rs.',
+        currency: "Rs.",
         transactions,
-        deposit,
-        pay,
-        canAfford,
         formatAmount,
-        resetWallet,
+        isLoaded,
+        error,
+        historyError,
       }}
     >
       {children}
@@ -168,8 +216,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
 export function useWallet() {
   const context = useContext(WalletContext);
-  if (!context) {
-    throw new Error('useWallet must be used within a WalletProvider');
-  }
+  if (!context) throw new Error("useWallet must be used within a WalletProvider");
   return context;
 }

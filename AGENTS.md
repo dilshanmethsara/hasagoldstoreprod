@@ -1,5 +1,7 @@
-- Keep storefront services frontend-only; centralize local demo profiles, session handling, and theme state in a replaceable provider, persisting only non-secret validated data because no real authentication or checkout services exist.
-- Centralize game catalog data in a browser-safe module and share storefront chrome through the root layout to keep navigation and sample labeling consistent.
-- Use one dynamic game detail route for all catalog games, with distinct metadata per game, to keep top-up selection behavior consistent.
-- Mount the shared bottom navigation in the root layout and derive its active indicator from the current path so it stays consistent across all storefront pages.
-- Keep the public admin demo under its own shared layout with session-only draft state; exclude storefront chrome there and distinguish drafts from device-local profile edits because it is not a secure admin service.
+- Use Firebase Authentication for identity and the shared Firestore data-access modules for persistent customer data. Do not add application business data to localStorage or sessionStorage.
+- Scope protected customer documents and queries to the authenticated Firebase UID. Client Firestore rules must keep role, wallet balance, catalog, order payment, and fulfillment fields protected.
+- Create orders only through the trusted server operation. Orders remain pending and unpaid until a separately configured, verified payment process exists.
+- Do not report game Player ID verification, payment, wallet spending, account sales, top-up delivery, or admin management as successful unless a real authorized integration completed the operation.
+- Keep catalog data in Firestore. Do not add fabricated production products, profiles, orders, transactions, or fallback catalog data.
+- Keep ephemeral interface state in React. Firebase Authentication may manage its own session persistence.
+- Preserve the existing route structure and UI. Update user-facing availability text whenever backend functionality is incomplete.

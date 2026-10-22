@@ -1,1036 +1,3244 @@
-﻿import { useState, type FormEvent } from 'react';
-import { Link, Outlet, useLocation } from '@tanstack/react-router';
+import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { signInWithCustomToken, type User as FirebaseUser } from "firebase/auth";
+import { Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
 import {
-  LayoutGrid, Gamepad2, Diamond, Users, Receipt, HelpCircle, Settings2,
-  ArrowUpRight, Search, Pencil, Trash2, Plus, X, Menu, Save, ShieldCheck,
-  Activity, RotateCcw, Download, CheckCircle2, AlertTriangle, Clock,
-  Server, Radio, FileText, ExternalLink, Eye, Tag, Send, MessageSquare,
-  Filter, DollarSign, Layers, SlidersHorizontal, RefreshCw, Check
-} from 'lucide-react';
-import { toast } from 'sonner';
-import { z } from 'zod';
-import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { Brand } from './store-ui';
-import { ThemeMenu } from './account-menu';
-import { useDemoAccount } from './demo-account';
+  AlertTriangle,
+  Archive,
+  ArrowLeft,
+  ArrowUpRight,
+  BadgeCheck,
+  Check,
+  ChevronRight,
+  CircleHelp,
+  Copy,
+  CreditCard,
+  Database,
+  Gamepad2,
+  LayoutDashboard,
+  Mail,
+  Package,
+  Pencil,
+  Plus,
+  ReceiptText,
+  RefreshCw,
+  Search,
+  Settings2,
+  ShieldCheck,
+  Trash2,
+  Users,
+  WalletCards,
+} from "lucide-react";
+import { toast } from "sonner";
+import { getFirebaseAuth } from "@/lib/firebase";
+import { useAccount } from "@/components/account-context";
+import { useGames } from "@/lib/firestore";
 import {
-  AdminProvider, useAdmin,
-  type AdminGame, type AdminAccountListing, type AdminOrder,
-  type AdminService, type AdminTicket
-} from './admin-context';
+  adjustAdminUserWallet,
+  archiveAdminRecord,
+  getAdminOverview,
+  listAdminRecords,
+  listAdminUsers,
+  listNexauraFailures,
+  searchAdminOrder,
+  searchAdminUser,
+  getAdminOrderProofUrl,
+  signInWithAdminPassword,
+  saveAdminRecord,
+  saveAdminPaymentMethods,
+  updateAdminOrderStatus,
+  setAdminUserDisabled,
+  verifyAdminAccess,
+} from "@/api/admin";
+import type { AdminDocument } from "@/api/admin";
+import { Button } from "@/components/ui/button";
+import hasaLogo from "@/assets/newhasalogo.png";
+import type { OrderStatus, PaymentStatus } from "@/lib/firestore-schema";
+import type { PaymentMethodConfig } from "@/lib/firestore-schema";
+import { PRODUCT_CATEGORIES } from "@/lib/firestore-schema";
+import { DEFAULT_PAYMENT_METHODS, parsePaymentMethods } from "@/lib/payment-methods";
 
-const nav = [
-  { to: '/admin',           label: 'Overview',        icon: LayoutGrid   },
-  { to: '/admin/games',     label: 'Games',            icon: Gamepad2     },
-  { to: '/admin/packages',  label: 'Packages',         icon: Diamond      },
-  { to: '/admin/accounts',  label: 'Marketplace',      icon: Users        },
-  { to: '/admin/orders',    label: 'Orders',           icon: Receipt      },
-  { to: '/admin/support',   label: 'Support & FAQs',   icon: HelpCircle   },
-  { to: '/admin/settings',  label: 'Settings',         icon: Settings2    },
+type AdminRecord = Partial<AdminDocument>;
+type AdminSection = "games" | "products" | "gameAccounts" | "orders" | "wallet_deposits";
+type AdminFormState = Record<string, string | boolean>;
+
+function requireAdminSessionUser(accountUid: string | null): FirebaseUser {
+  if (!accountUid) {
+    throw new Error("This tab has no signed-in Firebase account. Sign in here, then reload Admin.");
+  }
+  const user = getFirebaseAuth().currentUser;
+  if (!user) {
+    throw new Error(
+      "Firebase sign-in is missing in this tab. Sign out, sign back in at this address, then reload Admin.",
+    );
+  }
+  if (user.uid !== accountUid) {
+    throw new Error(
+      "The signed-in Firebase account changed. Sign out, sign back in, then reload Admin.",
+    );
+  }
+  return user;
+}
+
+function createFormState(record: AdminRecord): AdminFormState {
+  return Object.fromEntries(
+    Object.entries(record).map(([key, value]) => [
+      key,
+      Array.isArray(value)
+        ? value
+            .map((item) =>
+              item && typeof item === "object" && "label" in item && "value" in item
+                ? `${String(item["label"])}: ${String(item["value"])}`
+                : String(item),
+            )
+            .join("\n")
+        : typeof value === "boolean"
+          ? value
+          : value === null || value === undefined
+            ? ""
+            : String(value),
+    ]),
+  );
+}
+
+function formText(form: AdminFormState, key: string): string {
+  const value = form[key];
+  return typeof value === "string" ? value : "";
+}
+
+function formBoolean(form: AdminFormState, key: string): boolean {
+  return form[key] === true;
+}
+
+function formNumber(form: AdminFormState, key: string): number {
+  const value = formText(form, key).trim();
+  return value === "" ? Number.NaN : Number(value);
+}
+
+function formatAmount(value: unknown): string {
+  const numeric = typeof value === "number" ? value : Number(value);
+  const hasValue = typeof value === "number" || (typeof value === "string" && value.trim() !== "");
+  return hasValue && Number.isFinite(numeric) ? numeric.toLocaleString() : "—";
+}
+
+const NEXAURA_FAILURE_STATUSES = ["failed", "submission_failed", "submission_unknown"] as const;
+type NexauraFailureKind = (typeof NEXAURA_FAILURE_STATUSES)[number];
+
+function nexauraFailureKind(value: unknown): NexauraFailureKind | null {
+  return typeof value === "string" &&
+    (NEXAURA_FAILURE_STATUSES as readonly string[]).includes(value)
+    ? (value as NexauraFailureKind)
+    : null;
+}
+
+function nexauraFailureLabel(kind: NexauraFailureKind): string {
+  switch (kind) {
+    case "failed":
+      return "Top-up failed";
+    case "submission_failed":
+      return "Submission failed";
+    case "submission_unknown":
+      return "Needs review";
+  }
+}
+
+function nexauraFailureReason(order: AdminRecord): string {
+  const lastError =
+    typeof order["nexauraLastError"] === "string" ? order["nexauraLastError"].trim() : "";
+  if (lastError) return lastError;
+  const note = typeof order["nexauraNote"] === "string" ? order["nexauraNote"].trim() : "";
+  if (note) return note;
+  switch (nexauraFailureKind(order["nexauraStatus"])) {
+    case "failed":
+      return "Nexaura reported that this top-up could not be delivered, without a detailed reason.";
+    case "submission_failed":
+      return "Nexaura rejected the top-up request, without a detailed reason.";
+    case "submission_unknown":
+      return "Nexaura did not confirm the submission, so delivery needs a manual check.";
+    default:
+      return "No failure reason was recorded for this order.";
+  }
+}
+
+function formatDateTime(value: unknown): string {
+  const millis = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(millis) || millis <= 0) return "—";
+  return new Date(millis).toLocaleString();
+}
+
+function productCategoryLabel(value: unknown): string {
+  return PRODUCT_CATEGORIES.find((category) => category.id === value)?.label ?? "Diamonds";
+}
+
+function splitFormLines(value: string): string[] {
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function FormField({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string | undefined;
+  children: ReactNode;
+}) {
+  return (
+    <label className="admin-form-field">
+      <span className="admin-field-label">{label}</span>
+      {children}
+      {hint && <small>{hint}</small>}
+    </label>
+  );
+}
+
+const navigation = [
+  ["/admin", "Overview", LayoutDashboard],
+  ["/admin/games", "Games", Gamepad2],
+  ["/admin/packages", "Packages", Package],
+  ["/admin/accounts", "Marketplace accounts", BadgeCheck],
+  ["/admin/orders", "Orders", ReceiptText],
+  ["/admin/topup-failures", "Top-up failures", AlertTriangle],
+  ["/admin/deposits", "Wallet deposits", WalletCards],
+  ["/admin/users", "Customers", Users],
+  ["/admin/payment-methods", "Payment methods", CreditCard],
+  ["/admin/settings", "Settings", Settings2],
+  ["/admin/support", "FAQs", CircleHelp],
 ] as const;
 
-export function AdminLayout() { return <AdminProvider><AdminShell /></AdminProvider>; }
-
-function AdminShell() {
-  const [open, setOpen] = useState(false);
+function AdminShell({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: ReactNode;
+}) {
   const { pathname } = useLocation();
-  const current = nav.find(item => item.to === pathname);
+  const { ready, uid, user } = useAccount();
+  const firebaseUser = getFirebaseAuth().currentUser;
+  const sessionActive = Boolean(ready && uid && firebaseUser?.uid === uid);
+  const adminEmail = sessionActive
+    ? (firebaseUser?.email ?? user?.email ?? "Signed-in account")
+    : "Not signed in";
+  const sessionLabel = !ready
+    ? "Checking sign-in"
+    : sessionActive
+      ? "Session active"
+      : "Sign-in required";
   return (
-    <div className="admin-shell">
-      <aside className={`admin-sidebar ${open ? 'is-open' : ''}`}>
-        <div className="admin-brand">
-          <Brand />
-          <Button variant="ghost" size="icon" className="admin-close" aria-label="Close admin navigation" onClick={() => setOpen(false)}><X /></Button>
-        </div>
-        <div className="admin-workspace">
-          <span className="admin-workspace-icon"><ShieldCheck /></span>
-          <div><strong>Store workspace</strong><small>Sample · Frontend demo</small></div>
-        </div>
-        <span className="admin-nav-caption">MANAGEMENT</span>
-        <nav aria-label="Admin navigation">
-          {nav.map(item => (
-            <Button asChild variant="ghost" key={item.to}>
-              <Link to={item.to} activeOptions={{ exact: true }} activeProps={{ className: 'is-active', 'aria-current': 'page' }} onClick={() => setOpen(false)} viewTransition>
-                <item.icon /><span>{item.label}</span>
+    <div className="admin-app-shell">
+      <aside className="admin-sidebar">
+        <Link to="/" className="admin-brand" aria-label="HASA GOLD STORE home">
+          <span className="admin-brand-mark">
+            <img src={hasaLogo} alt="" />
+          </span>
+          <span className="admin-brand-copy">
+            <strong>
+              HASA <em>GOLD</em>
+            </strong>
+            <small>STORE CONTROL</small>
+          </span>
+        </Link>
+        <div className="admin-side-label">WORKSPACE</div>
+        <nav className="admin-side-nav" aria-label="Admin navigation">
+          {navigation.map(([to, label, Icon]) => {
+            const active =
+              to === "/admin"
+                ? pathname === "/admin" || pathname === "/admin/"
+                : pathname.startsWith(to);
+            return (
+              <Link
+                key={to}
+                to={to}
+                className={`admin-side-link${active ? " is-active" : ""}`}
+                aria-current={active ? "page" : undefined}
+              >
+                <Icon size={17} strokeWidth={1.8} />
+                <span>{label}</span>
+                {active && <ChevronRight className="admin-side-chevron" size={15} />}
               </Link>
-            </Button>
-          ))}
+            );
+          })}
         </nav>
         <div className="admin-sidebar-bottom">
-          <p>No live services connected</p>
-          <Button asChild variant="outline"><Link to="/">View storefront <ArrowUpRight /></Link></Button>
+          <div className="admin-security-note">
+            <span className="admin-security-icon">
+              <ShieldCheck size={17} />
+            </span>
+            <span>
+              <strong>Protected workspace</strong>
+              <small>Server-authorized access</small>
+            </span>
+          </div>
+          <Link className="admin-back-link" to="/">
+            <ArrowLeft size={15} /> Back to storefront
+          </Link>
         </div>
       </aside>
-      {open && <Button className="admin-backdrop" variant="ghost" aria-label="Dismiss admin navigation" onClick={() => setOpen(false)} />}
-      <div className="admin-body">
+      <div className="admin-main-column">
         <header className="admin-topbar">
-          <Button variant="ghost" size="icon" className="admin-menu" aria-label="Open admin navigation" onClick={() => setOpen(true)}><Menu /></Button>
-          <div className="admin-breadcrumb">Workspace <span>/</span><strong>{current?.label || 'Overview'}</strong></div>
-          <div className="admin-topbar-tools">
-            <span className="admin-badge">Sample</span>
-            <ThemeMenu />
-            <Button asChild variant="outline" className="admin-store-link"><Link to="/">Storefront <ArrowUpRight /></Link></Button>
+          <div className="admin-topbar-context">
+            <span className="admin-topbar-kicker">HASA GOLD STORE</span>
+            <span className="admin-topbar-divider">/</span>
+            <span>Administration</span>
+          </div>
+          <div className="admin-topbar-user">
+            <span className="admin-online-indicator" aria-label={sessionLabel} />
+            <span className="admin-topbar-user-copy">
+              <strong>{adminEmail}</strong>
+              <small>{sessionLabel}</small>
+            </span>
+            <span className="admin-avatar">{adminEmail.charAt(0).toUpperCase()}</span>
+            <Link className="admin-topbar-storefront" to="/">
+              Storefront <ArrowUpRight size={14} />
+            </Link>
           </div>
         </header>
-        <main id="main-content" className="admin-main">
-          <div className="admin-notice"><ShieldCheck size={16} /><span>Public admin demo · No secure access or live changes. Draft edits last for this admin visit.</span></div>
-          <Outlet />
+        {!sessionActive && ready && (
+          <div className="admin-session-notice" role="status">
+            <span>Sign in to manage the store.</span>{" "}
+            <a href={`/admin-login?redirect=${encodeURIComponent(pathname)}`}>Open admin sign-in</a>
+          </div>
+        )}
+        <main id="main-content" className="admin-content">
+          <header className="admin-page-heading">
+            <div>
+              <span className="admin-page-eyebrow">
+                <Database size={13} /> STORE OPERATIONS
+              </span>
+              <h1>{title}</h1>
+              <p>{description}</p>
+            </div>
+            <div className="admin-heading-badge">
+              <ShieldCheck size={15} /> Secure admin
+            </div>
+          </header>
+          {children}
+          <footer className="admin-page-footer">
+            <span>
+              HASA GOLD STORE <b>·</b> CONTROL CENTER
+            </span>
+            <span>Store data is managed through trusted server operations.</span>
+          </footer>
         </main>
       </div>
     </div>
   );
 }
 
-export function AdminHeading({ title, description, children }: { title: string; description: string; children?: React.ReactNode }) {
+function AdminProductGroups({
+  groups,
+  renderRecord,
+  onAddPackage,
+}: {
+  groups: Array<[string, AdminRecord[]]>;
+  renderRecord: (record: AdminRecord) => ReactNode;
+  onAddPackage: (gameSlug: string, category: (typeof PRODUCT_CATEGORIES)[number]["id"]) => void;
+}) {
+  const { data: games = [], isLoading, error } = useGames();
+  const gameName = (slug: string) =>
+    games.find((game) => game.id === slug)?.name ||
+    (slug
+      ? slug
+          .split("-")
+          .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+          .join(" ")
+      : "Other packages");
+
   return (
-    <div className="admin-heading">
-      <div><span className="eyebrow">HASA GOLD · STORE MANAGEMENT</span><h1>{title}</h1><p>{description}</p></div>
-      {children}
+    <div className="admin-product-groups">
+      {error && (
+        <p className="admin-error-banner" role="alert">
+          Game names could not be loaded. Existing package groups are still available.
+        </p>
+      )}
+      {isLoading && <p className="admin-helper-copy">Loading game names…</p>}
+      {groups.map(([slug, products]) => (
+        <section className="admin-product-group" key={slug || "unassigned"}>
+          <header className="admin-product-group-heading">
+            <div>
+              <h3>{gameName(slug)}</h3>
+              <span>
+                {products.length} {products.length === 1 ? "package" : "packages"}
+              </span>
+            </div>
+            {slug && (
+              <Button
+                className="admin-quiet-button"
+                variant="outline"
+                size="sm"
+                onClick={() => onAddPackage(slug, "diamonds")}
+                aria-label={`Add a package for ${gameName(slug)}`}
+              >
+                <Plus size={14} /> Add package
+              </Button>
+            )}
+          </header>
+          {PRODUCT_CATEGORIES.map((category) => {
+            const categoryProducts = products.filter(
+              (product) =>
+                (product["category"] === undefined ? "diamonds" : product["category"]) ===
+                category.id,
+            );
+            if (categoryProducts.length === 0) return null;
+            return (
+              <section className="admin-product-category" key={category.id}>
+                <header className="admin-product-category-heading">
+                  <h4>{category.label}</h4>
+                  <span>{categoryProducts.length}</span>
+                </header>
+                <div className="admin-record-list">{categoryProducts.map(renderRecord)}</div>
+              </section>
+            );
+          })}
+        </section>
+      ))}
     </div>
   );
 }
 
-function Empty({ icon: Icon, title, description }: { icon: typeof Receipt; title: string; description: string }) {
-  return <div className="admin-empty"><Icon /><h2>{title}</h2><p>{description}</p></div>;
-}
+function AdminDataPage({
+  title,
+  description,
+  collection,
+  template,
+  readOnly = false,
+}: {
+  title: string;
+  description: string;
+  collection: AdminSection;
+  template?: AdminRecord;
+  readOnly?: boolean;
+}) {
+  const { ready, uid } = useAccount();
+  const queryClient = useQueryClient();
+  const [records, setRecords] = useState<AdminRecord[]>([]);
+  const [selected, setSelected] = useState<AdminRecord | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [form, setForm] = useState<AdminFormState>({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [nextPageToken, setNextPageToken] = useState<string | null>(null);
+  const [packageGameLocked, setPackageGameLocked] = useState(false);
+  const [packageQuery, setPackageQuery] = useState("");
+  const [packageStatus, setPackageStatus] = useState<"all" | "active" | "archived">("all");
+  const [formError, setFormError] = useState<string | null>(null);
+  const { data: catalogGames = [] } = useGames();
 
-function PillBadge({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    Completed: 'pill-success', Available: 'pill-success', operational: 'pill-success', Open: 'pill-info',
-    Processing: 'pill-info', Reserved: 'pill-warning', degraded: 'pill-warning', 'In Progress': 'pill-info',
-    Pending: 'pill-warning', maintenance: 'pill-warning', Sold: 'pill-muted', Resolved: 'pill-muted',
-    Refunded: 'pill-muted', outage: 'pill-danger',
+  const load = useCallback(
+    async (pageToken?: string, append = false) => {
+      if (!ready) return;
+      setLoading(true);
+      if (!append) {
+        setError(null);
+        setNextPageToken(null);
+      }
+      try {
+        const user = requireAdminSessionUser(uid);
+        const idToken = await user.getIdToken();
+        const result = await listAdminRecords({ data: { idToken, collection, pageToken } });
+        setRecords((current) => (append ? [...current, ...result.items] : result.items));
+        setNextPageToken(result.nextPageToken);
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "Admin data could not be loaded.");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [collection, ready, uid],
+  );
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  function edit(record: AdminRecord | null, defaults?: AdminRecord) {
+    setSelected(record);
+    setFormError(null);
+    const nextForm = {
+      ...createFormState(record ?? template ?? {}),
+      ...createFormState(defaults ?? {}),
+    };
+    if (collection === "products") {
+      if (!formText(nextForm, "category")) nextForm["category"] = "diamonds";
+      if (!record) {
+        if (!formText(nextForm, "gameSlug") && catalogGames[0]) {
+          nextForm["gameSlug"] = catalogGames[0].id;
+        }
+        // Package IDs are internal link keys; generate one so admins never edit it by hand.
+        nextForm["id"] =
+          `${formText(nextForm, "gameSlug") || "package"}-${Date.now().toString(36)}`;
+      }
+    }
+    setForm(nextForm);
+    setPackageGameLocked(collection === "products" && !record && Boolean(defaults?.["gameSlug"]));
+    setEditorOpen(true);
+  }
+
+  function updateField(key: string, value: string | boolean) {
+    setForm((current) => ({ ...current, [key]: value }));
+    setFormError(null);
+  }
+
+  async function save() {
+    if (collection === "orders" || collection === "wallet_deposits") {
+      setError("Order and deposit records are read-only.");
+      return;
+    }
+    if (collection === "products") {
+      if (!formText(form, "name").trim()) {
+        setFormError("Give this package a name customers will recognize, e.g. Weekly Membership.");
+        return;
+      }
+      if (!formText(form, "gameSlug").trim()) {
+        setFormError("Choose the game this package belongs to.");
+        return;
+      }
+      if (!formText(form, "unitLabel").trim()) {
+        setFormError('Add a unit label, e.g. "Diamonds" or "Membership".');
+        return;
+      }
+      const pricePkr = formNumber(form, "pricePkr");
+      if (!Number.isFinite(pricePkr) || pricePkr <= 0) {
+        setFormError("Enter the LKR price customers should pay. It must be greater than 0.");
+        return;
+      }
+    }
+    const displayOrder = formNumber(form, "displayOrder");
+    const common = {
+      active: formBoolean(form, "active"),
+      displayOrder: Number.isFinite(displayOrder) ? displayOrder : 0,
+    };
+    const record =
+      collection === "games"
+        ? {
+            slug: formText(form, "slug"),
+            name: formText(form, "name"),
+            currency: formText(form, "currency"),
+            tone: formText(form, "tone"),
+            icon: formText(form, "icon"),
+            artworkKey: formText(form, "artworkKey"),
+            description: formText(form, "description"),
+            serverOptions: splitFormLines(formText(form, "serverOptions")),
+            ...common,
+          }
+        : collection === "products"
+          ? {
+              id: formText(form, "id"),
+              gameSlug: formText(form, "gameSlug"),
+              nexauraProductId: formText(form, "nexauraProductId").trim(),
+              category: formText(form, "category"),
+              // Hidden catalog fields keep their stored values so order creation and
+              // provider submissions stay valid. They are no longer edited in the UI.
+              amount: formNumber(form, "amount") > 0 ? formNumber(form, "amount") : 1,
+              unitLabel: formText(form, "unitLabel"),
+              name: formText(form, "name"),
+              priceUsd: Number.isFinite(formNumber(form, "priceUsd"))
+                ? formNumber(form, "priceUsd")
+                : 0,
+              pricePkr: formNumber(form, "pricePkr"),
+              bonus: Number.isFinite(formNumber(form, "bonus")) ? formNumber(form, "bonus") : 0,
+              isPopular: formBoolean(form, "isPopular"),
+              isBestValue: formBoolean(form, "isBestValue"),
+              isVip: formBoolean(form, "isVip"),
+              ...common,
+            }
+          : {
+              id: formText(form, "id"),
+              gameId: formText(form, "gameId"),
+              gameName: formText(form, "gameName"),
+              title: formText(form, "title"),
+              tagline: formText(form, "tagline"),
+              priceUsd: formNumber(form, "priceUsd"),
+              pricePkr: formNumber(form, "pricePkr"),
+              priceSample: formText(form, "priceSample"),
+              level: formNumber(form, "level"),
+              rank: formText(form, "rank"),
+              server: formText(form, "server"),
+              loginType: formText(form, "loginType"),
+              artworkKey: formText(form, "artworkKey"),
+              tone: formText(form, "tone"),
+              verified: false,
+              status: formText(form, "status"),
+              badges: splitFormLines(formText(form, "badges")),
+              inventoryHighlights: splitFormLines(formText(form, "inventoryHighlights")),
+              description: formText(form, "description"),
+              features: splitFormLines(formText(form, "features")).map((line) => {
+                const separator = line.indexOf(":");
+                return {
+                  label: separator < 0 ? line : line.slice(0, separator).trim(),
+                  value: separator < 0 ? "" : line.slice(separator + 1).trim(),
+                };
+              }),
+              ...common,
+            };
+    setSaving(true);
+    setError(null);
+    try {
+      const user = requireAdminSessionUser(uid);
+      await saveAdminRecord({
+        data: { idToken: await user.getIdToken(), collection, record },
+      });
+      if (collection === "products") {
+        await queryClient.invalidateQueries({ queryKey: ["products"] });
+      }
+      toast.success("Store record saved.");
+      setSelected(null);
+      setEditorOpen(false);
+      await load();
+    } catch (cause) {
+      setFormError(cause instanceof Error ? cause.message : "The record could not be saved.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function archive(record: AdminRecord) {
+    if (collection === "orders" || collection === "wallet_deposits") return;
+    if (
+      typeof record.id !== "string" ||
+      !window.confirm(`Archive "${record["name"] ?? record["title"] ?? record.id}"?`)
+    ) {
+      return;
+    }
+    try {
+      const user = requireAdminSessionUser(uid);
+      await archiveAdminRecord({
+        data: { idToken: await user.getIdToken(), collection, id: record.id },
+      });
+      if (collection === "products") {
+        await queryClient.invalidateQueries({ queryKey: ["products"] });
+      }
+      toast.success("Record archived; it is no longer active in the storefront.");
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The record could not be archived.");
+    }
+  }
+
+  const textField = (key: string, label: string, placeholder: string, hint?: string) => (
+    <FormField label={label} hint={hint}>
+      <input
+        className="admin-form-input"
+        value={formText(form, key)}
+        onChange={(event) => updateField(key, event.target.value)}
+        placeholder={placeholder}
+      />
+    </FormField>
+  );
+  const numberField = (
+    key: string,
+    label: string,
+    placeholder: string,
+    hint?: string,
+    step = "1",
+  ) => (
+    <FormField label={label} hint={hint}>
+      <input
+        className="admin-form-input"
+        type="number"
+        min="0"
+        step={step}
+        value={formText(form, key)}
+        onChange={(event) => updateField(key, event.target.value)}
+        placeholder={placeholder}
+      />
+    </FormField>
+  );
+  const selectField = (
+    key: string,
+    label: string,
+    options: Array<[string, string]>,
+    hint?: string,
+  ) => (
+    <FormField label={label} hint={hint}>
+      <select
+        className="admin-form-input admin-form-select"
+        value={formText(form, key)}
+        onChange={(event) => updateField(key, event.target.value)}
+      >
+        {options.map(([value, optionLabel]) => (
+          <option value={value} key={value}>
+            {optionLabel}
+          </option>
+        ))}
+      </select>
+    </FormField>
+  );
+  const textareaField = (
+    key: string,
+    label: string,
+    placeholder: string,
+    hint?: string,
+    rows = 3,
+  ) => (
+    <FormField label={label} hint={hint}>
+      <textarea
+        className="admin-form-input admin-form-textarea"
+        rows={rows}
+        value={formText(form, key)}
+        onChange={(event) => updateField(key, event.target.value)}
+        placeholder={placeholder}
+      />
+    </FormField>
+  );
+  const toggleField = (key: string, label: string, hint: string) => (
+    <label className="admin-toggle-row">
+      <input
+        type="checkbox"
+        checked={formBoolean(form, key)}
+        onChange={(event) => updateField(key, event.target.checked)}
+      />
+      <span className="admin-toggle-copy">
+        <strong>{label}</strong>
+        <small>{hint}</small>
+      </span>
+    </label>
+  );
+  const packageQueryValue = packageQuery.trim().toLowerCase();
+  const visibleRecords =
+    collection === "products"
+      ? records.filter((record) => {
+          const archived = record["active"] === false;
+          if (packageStatus === "active" && archived) return false;
+          if (packageStatus === "archived" && !archived) return false;
+          if (!packageQueryValue) return true;
+          return [
+            record["name"],
+            record["unitLabel"],
+            record["category"],
+            record["gameSlug"],
+            record.id,
+          ]
+            .map((value) => String(value ?? "").toLowerCase())
+            .join(" ")
+            .includes(packageQueryValue);
+        })
+      : records;
+  const gameOptions: Array<[string, string]> = [
+    ["", "Choose a game"],
+    ...catalogGames.map((game): [string, string] => [game.id, game.name]),
+  ];
+  const currentGameSlug = formText(form, "gameSlug");
+  if (currentGameSlug && !gameOptions.some(([value]) => value === currentGameSlug)) {
+    gameOptions.push([currentGameSlug, `${currentGameSlug} (inactive)`]);
+  }
+  const productGroups =
+    collection === "products"
+      ? Array.from(
+          visibleRecords.reduce<Map<string, AdminRecord[]>>((groups, record) => {
+            const gameSlug =
+              typeof record["gameSlug"] === "string" && record["gameSlug"].trim()
+                ? record["gameSlug"].trim()
+                : "";
+            const group = groups.get(gameSlug) ?? [];
+            group.push(record);
+            groups.set(gameSlug, group);
+            return groups;
+          }, new Map()),
+        ).sort(([slugA], [slugB]) => slugA.localeCompare(slugB))
+      : null;
+  const renderRowActions = (record: AdminRecord) =>
+    readOnly ? null : (
+      <div className="admin-row-actions">
+        <Button
+          className="admin-icon-button"
+          variant="outline"
+          size="icon"
+          aria-label={`Edit ${String(record["name"] ?? record["title"] ?? record.id)}`}
+          title="Edit"
+          onClick={() => edit(record)}
+        >
+          <Pencil size={14} />
+        </Button>
+        {record["active"] !== false && (
+          <Button
+            className="admin-icon-button admin-archive-button"
+            variant="outline"
+            size="icon"
+            aria-label={`Archive ${String(record["name"] ?? record["title"] ?? record.id)}`}
+            title="Archive"
+            onClick={() => void archive(record)}
+          >
+            <Archive size={14} />
+          </Button>
+        )}
+      </div>
+    );
+
+  const renderProductRow = (record: AdminRecord) => {
+    const badges: Array<{ label: string; className: string }> = [];
+    if (!String(record["name"] ?? "").trim()) {
+      badges.push({ label: "Missing name", className: "is-warning" });
+    }
+    if (record["isPopular"] === true) badges.push({ label: "Popular", className: "is-popular" });
+    if (record["isBestValue"] === true) badges.push({ label: "Best value", className: "is-value" });
+    if (record["isVip"] === true) badges.push({ label: "VIP", className: "is-vip" });
+    const archived = record["active"] === false;
+    const title =
+      String(record["name"] ?? "").trim() || String(record["unitLabel"] ?? "").trim() || record.id;
+    return (
+      <article
+        key={record.id}
+        className={`admin-record-row admin-package-row${archived ? " is-archived" : ""}`}
+      >
+        <span className="admin-package-price-tile">
+          <small>LKR</small>
+          <strong>{formatAmount(record["pricePkr"])}</strong>
+        </span>
+        <div className="admin-record-main">
+          <p className="admin-record-title" title={title}>
+            {title}
+          </p>
+          <p className="admin-record-meta">
+            <span>{productCategoryLabel(record["category"])}</span>
+            <span>·</span>
+            <span>{String(record["unitLabel"] ?? "Unit")}</span>
+            <span>·</span>
+            <code>{record.id}</code>
+          </p>
+          {badges.length > 0 && (
+            <div className="admin-package-badges">
+              {badges.map((badge) => (
+                <span className={`admin-package-badge ${badge.className}`} key={badge.label}>
+                  {badge.label}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+        <span className={`admin-status-pill ${archived ? "is-muted" : "is-success"}`}>
+          <i />
+          {archived ? "Archived" : "Live"}
+        </span>
+        {renderRowActions(record)}
+      </article>
+    );
   };
-  return <span className={`admin-pill ${map[status] || 'pill-muted'}`}>{status}</span>;
-}
 
-// ─── OVERVIEW ────────────────────────────────────────────────────
-export function AdminOverview() {
-  const { catalog, answers, activity, accounts, orders, services, incidents } = useAdmin();
-  const { profiles } = useDemoAccount();
-  const operationalCount = services.filter(s => s.status === 'operational').length;
-  const openIncidents = incidents.filter(i => i.status !== 'Resolved').length;
-  const pendingOrders = orders.filter(o => o.status === 'Pending' || o.status === 'Processing').length;
-
-  const metrics = [
-    { label: 'Catalog Games',       value: catalog.length,     icon: Gamepad2,       detail: `${catalog.filter(g => g.enabled).length} enabled` },
-    { label: 'Top-up Packages',     value: catalog.reduce((n, g) => n + g.packs.length, 0), icon: Diamond, detail: 'Sample amounts' },
-    { label: 'Marketplace Accounts',value: accounts.length,    icon: Layers,         detail: `${accounts.filter(a => a.status === 'Available').length} available` },
-    { label: 'Pending Orders',       value: pendingOrders,      icon: Receipt,        detail: `${orders.length} total orders` },
-    { label: 'Services Online',      value: `${operationalCount}/${services.length}`, icon: Server, detail: 'Live service monitors' },
-    { label: 'Open Incidents',       value: openIncidents,      icon: AlertTriangle,  detail: openIncidents === 0 ? 'All systems stable' : 'Needs attention' },
-    { label: 'Support FAQs',         value: answers.length,     icon: HelpCircle,     detail: 'Draft support content' },
-    { label: 'Local Profiles',       value: profiles.length,    icon: Users,          detail: 'On this device only' },
-  ];
-
-  const quickActions = [
-    { to: '/admin/games',    label: 'Manage Games',           icon: Gamepad2   },
-    { to: '/admin/packages', label: 'Edit Packages',          icon: Diamond    },
-    { to: '/admin/accounts', label: 'Marketplace Listings',   icon: Layers     },
-    { to: '/admin/orders',   label: 'Review Orders',          icon: Receipt    },
-    { to: '/admin/support',  label: 'Support Tickets & FAQs', icon: MessageSquare },
-    { to: '/admin/settings', label: 'Store Settings',         icon: SlidersHorizontal },
-    { to: '/status',         label: 'Public Status Page',     icon: Radio      },
-    { to: '/privacy-policy', label: 'Privacy Policy',         icon: FileText   },
-    { to: '/refund-policy',  label: 'Refund Policy',          icon: FileText   },
-  ];
+  const renderRecord = (record: AdminRecord) => {
+    if (collection === "products") return renderProductRow(record);
+    return (
+      <article key={record.id} className="admin-record-row">
+        <span className={`admin-record-symbol ${record["active"] === false ? "is-muted" : ""}`}>
+          {collection === "games" ? (
+            <Gamepad2 size={17} />
+          ) : collection === "orders" ? (
+            <ReceiptText size={17} />
+          ) : collection === "wallet_deposits" ? (
+            <WalletCards size={17} />
+          ) : (
+            <BadgeCheck size={17} />
+          )}
+        </span>
+        <div className="admin-record-main">
+          <p className="admin-record-title">
+            {String(
+              record["name"] ??
+                record["title"] ??
+                record["packageName"] ??
+                (collection === "wallet_deposits" ? "eZ Cash deposit" : record.id),
+            )}
+          </p>
+          <p className="admin-record-meta">
+            {collection === "wallet_deposits" ? (
+              <>
+                <span>Reference number</span>
+                <code>{String(record["referenceNumber"] ?? "Not available")}</code>
+                <span>·</span>
+                <span>Member ID: {String(record["customerMemberId"] ?? "Not assigned")}</span>
+              </>
+            ) : (
+              <>
+                <code>{record.id}</code>
+                <span>·</span>
+                {String(
+                  record["gameName"] ??
+                    record["gameSlug"] ??
+                    record["customerEmail"] ??
+                    record["method"] ??
+                    "",
+                )}
+              </>
+            )}
+          </p>
+        </div>
+        <span
+          className={`admin-status-pill ${
+            record["active"] === false || record["status"] === "failed"
+              ? "is-muted"
+              : record["status"] === "credited" || record["status"] === "delivered"
+                ? "is-success"
+                : "is-pending"
+          }`}
+        >
+          <i />
+          {record["active"] === false ? "Archived" : String(record["status"] ?? "Active")}
+        </span>
+        {renderRowActions(record)}
+      </article>
+    );
+  };
 
   return (
-    <>
-      <AdminHeading title="Store overview" description="A complete view of your sample HASA GOLD STORE workspace." />
-
-      {/* Live status bar */}
-      <div className="admin-status-bar-widget">
-        <div className="admin-status-left">
-          <div className="admin-pulse-dot" />
-          <div>
-            <strong style={{ fontSize: 14 }}>{openIncidents === 0 ? 'All Systems Operational' : `${openIncidents} Active Incident${openIncidents > 1 ? 's' : ''}`}</strong>
-            <p style={{ fontSize: 11, color: 'var(--muted-foreground)', margin: '2px 0 0' }}>Last checked: just now</p>
+    <AdminShell title={title} description={description}>
+      <div className={`admin-content-grid${editorOpen ? " has-editor" : ""}`}>
+        <section className="admin-panel admin-records-panel">
+          <div className="admin-panel-header">
+            <div>
+              <span className="admin-panel-eyebrow">
+                {collection === "products" ? "PACKAGE CATALOG" : "LIVE COLLECTION"}
+              </span>
+              <h2>
+                {collection === "products" ? "Packages" : "Firestore records"}{" "}
+                <span className="admin-count-pill">
+                  {collection === "products" && visibleRecords.length !== records.length
+                    ? `${visibleRecords.length}/${records.length}`
+                    : records.length}
+                </span>
+              </h2>
+            </div>
+            <div className="admin-panel-actions">
+              <Button
+                className="admin-quiet-button"
+                variant="outline"
+                size="sm"
+                onClick={() => void load()}
+                disabled={loading}
+              >
+                <RefreshCw size={14} /> Refresh
+              </Button>
+              {!readOnly && (
+                <Button className="admin-primary-button" size="sm" onClick={() => edit(null)}>
+                  <Plus size={15} /> {collection === "products" ? "New package" : "New record"}
+                </Button>
+              )}
+            </div>
           </div>
-        </div>
-        <div className="admin-status-pills-row">
-          <span className="admin-status-chip"><span className="chip-dot" />Top-ups</span>
-          <span className="admin-status-chip"><span className="chip-dot" />Payments</span>
-          <span className="admin-status-chip"><span className="chip-dot" />Escrow</span>
-          <span className="admin-status-chip"><span className="chip-dot" />CDN</span>
-        </div>
-        <Button asChild variant="outline" style={{ fontSize: 11 }}>
-          <Link to="/status">Full status page <ArrowUpRight size={14} /></Link>
-        </Button>
-      </div>
+          {collection === "products" && (
+            <div className="admin-package-toolbar">
+              <label className="admin-package-search">
+                <Search size={14} aria-hidden="true" />
+                <input
+                  type="search"
+                  value={packageQuery}
+                  onChange={(event) => setPackageQuery(event.target.value)}
+                  placeholder="Search packages by name, ID, or game"
+                  aria-label="Search packages"
+                />
+              </label>
+              <div className="admin-package-filter" role="group" aria-label="Filter packages">
+                {(
+                  [
+                    ["all", "All"],
+                    ["active", "Live"],
+                    ["archived", "Archived"],
+                  ] as const
+                ).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className={packageStatus === value ? "is-active" : undefined}
+                    aria-pressed={packageStatus === value}
+                    onClick={() => setPackageStatus(value)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {loading ? (
+            <div className="admin-loading-state" role="status">
+              <span className="admin-loading-orb" /> Loading live records…
+            </div>
+          ) : collection === "products" && records.length === 0 ? (
+            <div className="admin-empty-state">
+              <Package size={24} />
+              <strong>No packages yet</strong>
+              <span>
+                Create your first package and it will appear on the storefront as soon as it is
+                active.
+              </span>
+              {!readOnly && (
+                <Button className="admin-primary-button" size="sm" onClick={() => edit(null)}>
+                  <Plus size={15} /> New package
+                </Button>
+              )}
+            </div>
+          ) : collection === "products" && productGroups ? (
+            visibleRecords.length === 0 ? (
+              <div className="admin-empty-state">
+                <Search size={24} />
+                <strong>No packages match</strong>
+                <span>Try another search term, or reset the status filter.</span>
+                <Button
+                  className="admin-quiet-button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setPackageQuery("");
+                    setPackageStatus("all");
+                  }}
+                >
+                  Clear filters
+                </Button>
+              </div>
+            ) : (
+              <AdminProductGroups
+                groups={productGroups}
+                renderRecord={renderRecord}
+                onAddPackage={(gameSlug, category) => edit(null, { gameSlug, category })}
+              />
+            )
+          ) : records.length === 0 ? (
+            <div className="admin-empty-state">
+              <Database size={24} />
+              <strong>No records yet</strong>
+              <span>Create your first Firestore record to populate this collection.</span>
+            </div>
+          ) : (
+            <div className="admin-record-list">{records.map(renderRecord)}</div>
+          )}
+          {nextPageToken && (
+            <Button
+              className="admin-load-more"
+              variant="outline"
+              onClick={() => void load(nextPageToken, true)}
+              disabled={loading}
+            >
+              {loading ? "Loading…" : "Load more records"}
+            </Button>
+          )}
+        </section>
 
-      {/* Metrics grid */}
-      <div className="admin-metrics" style={{ gridTemplateColumns: 'repeat(4,minmax(0,1fr))' }}>
-        {metrics.map(item => (
-          <article key={item.label} className="admin-metric">
-            <span className="admin-metric-icon"><item.icon /></span>
-            <p>{item.label}</p>
-            <strong>{item.value}</strong>
-            <small>{item.detail}</small>
-          </article>
-        ))}
-      </div>
+        {error && (
+          <p className="admin-error-banner" role="alert">
+            {error}
+          </p>
+        )}
 
-      {/* Quick actions */}
-      <section className="admin-section">
-        <div className="admin-section-heading"><h2>Quick actions</h2></div>
-        <div className="admin-quick-actions">
-          {quickActions.map(a => (
-            <Link key={a.to} to={a.to} className="admin-quick-btn">
-              <a.icon />{a.label}
-            </Link>
-          ))}
+        {editorOpen && (
+          <section className="admin-panel admin-editor-panel">
+            <div className="admin-panel-header">
+              <div>
+                <span className="admin-panel-eyebrow">
+                  {collection === "products" ? "PACKAGE DETAILS" : "CATALOG DETAILS"}
+                </span>
+                <h2>
+                  {collection === "products"
+                    ? selected
+                      ? "Edit package"
+                      : "New package"
+                    : selected
+                      ? "Edit listing"
+                      : "Add a new listing"}
+                </h2>
+              </div>
+            </div>
+            <p className="admin-helper-copy">
+              {collection === "products"
+                ? "Customers see the package name and LKR price. The other fields control delivery and where the package appears."
+                : "Enter the details below. Required fields are checked securely before the changes are saved."}
+            </p>
+            {collection === "products" && (
+              <div className="admin-package-preview">
+                <div className="admin-package-preview-head">
+                  <span className="admin-package-preview-game">
+                    {catalogGames.find((game) => game.id === currentGameSlug)?.name ||
+                      currentGameSlug ||
+                      "No game selected"}
+                  </span>
+                  <span className="admin-package-preview-id">
+                    {selected ? `ID · ${formText(form, "id")}` : "Not saved yet"}
+                  </span>
+                </div>
+                <strong className={formText(form, "name").trim() ? undefined : "is-placeholder"}>
+                  {formText(form, "name").trim() || "Package name"}
+                </strong>
+                <div className="admin-package-preview-foot">
+                  <span className="admin-package-preview-price">
+                    <small>LKR</small> {formatAmount(formText(form, "pricePkr"))}
+                  </span>
+                  <div className="admin-package-badges">
+                    <span className="admin-package-preview-unit">
+                      {formText(form, "unitLabel").trim() || "Unit label"}
+                    </span>
+                    {formBoolean(form, "isPopular") && (
+                      <span className="admin-package-badge is-popular">Popular</span>
+                    )}
+                    {formBoolean(form, "isBestValue") && (
+                      <span className="admin-package-badge is-value">Best value</span>
+                    )}
+                    {formBoolean(form, "isVip") && (
+                      <span className="admin-package-badge is-vip">VIP</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+            <div className="admin-form-section">
+              <h3>{collection === "products" ? "Package details" : "Basic information"}</h3>
+              <div className="admin-form-grid">
+                {collection === "games" ? (
+                  <>
+                    {textField("name", "Game name", "e.g. Free Fire")}
+                    {textField(
+                      "slug",
+                      "Game ID / URL key",
+                      "e.g. free-fire",
+                      "Use lowercase letters, numbers, and hyphens.",
+                    )}
+                    {textField("currency", "Top-up currency", "e.g. Diamonds")}
+                    {textField(
+                      "artworkKey",
+                      "Artwork key",
+                      "e.g. free-fire",
+                      "Matches an artwork asset configured in the storefront.",
+                    )}
+                  </>
+                ) : collection === "products" ? (
+                  <>
+                    {textField(
+                      "name",
+                      "Package name",
+                      "e.g. Weekly Membership",
+                      "Shown to customers on the game page and at checkout.",
+                    )}
+                    {packageGameLocked ? (
+                      <FormField label="Game" hint="This package belongs to the selected game.">
+                        <input
+                          className="admin-form-input"
+                          value={
+                            catalogGames.find((game) => game.id === formText(form, "gameSlug"))
+                              ?.name ?? formText(form, "gameSlug")
+                          }
+                          readOnly
+                        />
+                      </FormField>
+                    ) : (
+                      selectField(
+                        "gameSlug",
+                        "Game",
+                        gameOptions,
+                        "Packages only appear under their game.",
+                      )
+                    )}
+                    {selectField(
+                      "category",
+                      "Package category",
+                      PRODUCT_CATEGORIES.map(({ id, label }) => [id, label]),
+                    )}
+                    {textField(
+                      "unitLabel",
+                      "Unit label",
+                      "e.g. Diamonds",
+                      "Short unit customers understand, e.g. Diamonds or Membership.",
+                    )}
+                    {formText(form, "gameSlug") === "free-fire" &&
+                      textField(
+                        "nexauraProductId",
+                        "Nexaura product ID",
+                        "e.g. weekly",
+                        "Exact product_id from Nexaura. Each store package submits quantity 1.",
+                      )}
+                  </>
+                ) : (
+                  <>
+                    {textField("title", "Listing title", "e.g. Free Fire account - level 65")}
+                    {textField("id", "Listing ID", "e.g. ff-account-001")}
+                    {textField("gameId", "Game ID", "e.g. free-fire")}
+                    {textField("gameName", "Game name", "e.g. Free Fire")}
+                    {textField("tagline", "Short summary", "A short description of the account")}
+                  </>
+                )}
+              </div>
+            </div>
+            {collection === "games" && (
+              <div className="admin-form-section">
+                <h3>Game details</h3>
+                <div className="admin-form-grid">
+                  {selectField("tone", "Card theme", [
+                    ["ice", "Ice blue"],
+                    ["ember", "Ember"],
+                    ["olive", "Olive"],
+                    ["violet", "Violet"],
+                  ])}
+                  {selectField("icon", "Currency icon", [
+                    ["diamond", "Diamond"],
+                    ["coins", "Coins"],
+                  ])}
+                  {numberField(
+                    "displayOrder",
+                    "Display position",
+                    "0",
+                    "Lower numbers appear first.",
+                  )}
+                  {textareaField(
+                    "serverOptions",
+                    "Server options",
+                    "Asia\nSingapore",
+                    "Enter one server option per line.",
+                  )}
+                  <div className="admin-form-span">
+                    {textareaField(
+                      "description",
+                      "Description",
+                      "Describe the available top-up service.",
+                      undefined,
+                      3,
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+            {collection === "products" && (
+              <div className="admin-form-section">
+                <h3>Price and display</h3>
+                <div className="admin-form-grid">
+                  {numberField(
+                    "pricePkr",
+                    "Price (LKR)",
+                    "e.g. 1900",
+                    "The only price customers see. It is charged from the wallet or by eZ Cash.",
+                    "0.01",
+                  )}
+                  {numberField(
+                    "displayOrder",
+                    "Display position",
+                    "0",
+                    "Lower numbers appear first on the game page.",
+                  )}
+                </div>
+                <div className="admin-toggle-grid">
+                  {toggleField(
+                    "isPopular",
+                    "Popular package",
+                    "Highlight this package as popular.",
+                  )}
+                  {toggleField("isBestValue", "Best value", "Mark this package as best value.")}
+                  {toggleField("isVip", "VIP package", "Show the VIP package treatment.")}
+                  {toggleField(
+                    "active",
+                    "Active in storefront",
+                    "Archived packages stay hidden from customers.",
+                  )}
+                </div>
+              </div>
+            )}
+            {collection === "gameAccounts" && (
+              <>
+                <div className="admin-form-section">
+                  <h3>Account details</h3>
+                  <div className="admin-form-grid">
+                    {numberField(
+                      "pricePkr",
+                      "Price (LKR)",
+                      "e.g. 12500",
+                      "Listing price in Sri Lankan rupees.",
+                      "0.01",
+                    )}
+                    {numberField(
+                      "priceUsd",
+                      "Price (USD)",
+                      "e.g. 40",
+                      "Display/reference price in US dollars.",
+                      "0.01",
+                    )}
+                    {numberField("level", "Account level", "e.g. 65")}
+                    {textField("priceSample", "Price label", "e.g. LKR 12,500")}
+                    {textField("rank", "Rank", "e.g. Heroic")}
+                    {textField("server", "Server / region", "e.g. Asia")}
+                    {textField("loginType", "Login method", "e.g. Facebook")}
+                    {textField("artworkKey", "Artwork key", "e.g. free-fire")}
+                    {selectField("tone", "Card theme", [
+                      ["ice", "Ice blue"],
+                      ["ember", "Ember"],
+                      ["olive", "Olive"],
+                      ["violet", "Violet"],
+                    ])}
+                    {selectField("status", "Availability", [
+                      ["Available", "Available"],
+                      ["Reserved", "Reserved"],
+                      ["Sold", "Sold"],
+                    ])}
+                    {numberField(
+                      "displayOrder",
+                      "Display position",
+                      "0",
+                      "Lower numbers appear first.",
+                    )}
+                    {textareaField(
+                      "badges",
+                      "Badges",
+                      "Rare skins\nHigh rank",
+                      "Enter one badge per line.",
+                    )}
+                    {textareaField(
+                      "inventoryHighlights",
+                      "Inventory highlights",
+                      "Legendary outfit\nRare weapon skin",
+                      "Enter one highlight per line.",
+                    )}
+                    <div className="admin-form-span">
+                      {textareaField(
+                        "description",
+                        "Description",
+                        "Describe the account and included items.",
+                        undefined,
+                        4,
+                      )}
+                    </div>
+                    <div className="admin-form-span">
+                      {textareaField(
+                        "features",
+                        "Features",
+                        "Level: 65\nRank: Heroic",
+                        "Enter one feature per line as Label: Value.",
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div className="admin-toggle-grid">
+                  {toggleField(
+                    "active",
+                    "Show listing",
+                    "Only active listings are visible in the storefront.",
+                  )}
+                </div>
+                <p className="admin-inline-note">
+                  <ShieldCheck size={15} /> Listings are informational only. Verification is
+                  controlled by the trusted service.
+                </p>
+              </>
+            )}
+            {collection !== "gameAccounts" && collection !== "products" && (
+              <div className="admin-toggle-grid">
+                {toggleField(
+                  "active",
+                  "Active in storefront",
+                  "Inactive records are hidden from customers.",
+                )}
+              </div>
+            )}
+            {formError && (
+              <p className="admin-form-error" role="alert">
+                {formError}
+              </p>
+            )}
+            <div className="admin-editor-actions">
+              <Button
+                className="admin-primary-button"
+                onClick={() => void save()}
+                disabled={saving}
+              >
+                {saving ? "Saving…" : "Save to Firestore"}
+              </Button>
+              <Button
+                className="admin-quiet-button"
+                variant="outline"
+                onClick={() => {
+                  setSelected(null);
+                  setEditorOpen(false);
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </section>
+        )}
+      </div>
+      {readOnly && (
+        <p className="mt-4 text-sm text-muted-foreground">
+          Order and deposit payment/fulfillment states are read-only here. Only provider-verified
+          operations may change financial or delivery state.
+        </p>
+      )}
+    </AdminShell>
+  );
+}
+
+function OverviewContent() {
+  const { ready, uid } = useAccount();
+  const [stats, setStats] = useState<Record<string, number> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    if (!ready) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const user = requireAdminSessionUser(uid);
+      setStats(await getAdminOverview({ data: { idToken: await user.getIdToken() } }));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Overview could not be loaded.");
+    } finally {
+      setLoading(false);
+    }
+  }, [ready, uid]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const statMeta: Record<string, { label: string; icon: typeof Database; tone: string }> = {
+    games: { label: "Live games", icon: Gamepad2, tone: "blue" },
+    products: { label: "Top-up packages", icon: Package, tone: "gold" },
+    accounts: { label: "Account listings", icon: BadgeCheck, tone: "violet" },
+    orders: { label: "Total orders", icon: ReceiptText, tone: "blue" },
+    awaitingPaymentOrReview: {
+      label: "Awaiting payment / review",
+      icon: ReceiptText,
+      tone: "amber",
+    },
+    deposits: { label: "Wallet deposits", icon: WalletCards, tone: "green" },
+    pendingDeposits: { label: "Pending deposits", icon: WalletCards, tone: "amber" },
+    users: { label: "Customer accounts", icon: Users, tone: "violet" },
+  };
+
+  return (
+    <AdminShell
+      title="Store overview"
+      description="Live counts read from Firestore and Firebase Authentication."
+    >
+      <section className="admin-welcome-banner">
+        <div className="admin-welcome-glow" />
+        <div className="admin-welcome-content">
+          <span className="admin-welcome-kicker">
+            <span /> LIVE STORE DATA
+          </span>
+          <h2>Your store, at a glance.</h2>
+          <p>Manage your catalog and keep an eye on customer activity from one secure workspace.</p>
+        </div>
+        <div className="admin-welcome-emblem">
+          <Database size={30} strokeWidth={1.4} />
+          <span>H</span>
         </div>
       </section>
-
-      {/* Game collection + activity */}
+      {loading ? (
+        <div className="admin-stat-grid" role="status" aria-label="Loading store statistics">
+          {Array.from({ length: 8 }, (_, index) => (
+            <div key={index} className="admin-stat-skeleton" />
+          ))}
+        </div>
+      ) : error ? (
+        <div role="alert" className="admin-error-banner">
+          <p>{error}</p>
+          <Button variant="outline" onClick={() => void load()}>
+            <RefreshCw size={14} /> Retry
+          </Button>
+        </div>
+      ) : (
+        <div className="admin-stat-grid">
+          {Object.entries(stats ?? {}).map(([key, value]) => (
+            <div className={`admin-stat-card tone-${statMeta[key]?.tone ?? "blue"}`} key={key}>
+              <div className="admin-stat-card-top">
+                <span>{statMeta[key]?.label ?? key}</span>
+                {(() => {
+                  const Icon = statMeta[key]?.icon ?? Database;
+                  return <Icon size={18} />;
+                })()}
+              </div>
+              <p className="admin-stat-value">{value.toLocaleString()}</p>
+              <span className="admin-stat-foot">
+                <span className="admin-stat-live-dot" /> Live from connected services
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="admin-overview-bottom">
-        <section className="admin-section">
-          <div className="admin-section-heading">
-            <h2>Game collection</h2>
-            <Button asChild variant="link"><Link to="/admin/games">Manage games <ArrowUpRight /></Link></Button>
+        <section className="admin-panel admin-quick-panel">
+          <div className="admin-panel-header">
+            <div>
+              <span className="admin-panel-eyebrow">SHORTCUTS</span>
+              <h2>Manage your store</h2>
+            </div>
           </div>
-          <div className="admin-game-tiles">
-            {catalog.map(game => (
-              <Link to="/admin/packages" key={game.id} className="admin-game-tile">
-                <img src={game.image} alt={`Sample ${game.name} artwork`} />
-                <div>
-                  <span className="admin-badge">Sample</span>
-                  <h3>{game.name}</h3>
-                  <p>{game.packs.length} packages · {game.currency}</p>
-                </div>
-                <ArrowUpRight />
+          <div className="admin-quick-links">
+            {navigation.slice(1, 5).map(([to, label, Icon]) => (
+              <Link to={to} className="admin-quick-link" key={to}>
+                <span>
+                  <Icon size={17} />
+                </span>
+                <strong>{label}</strong>
+                <ArrowUpRight size={15} />
               </Link>
             ))}
           </div>
         </section>
-        <section className="admin-section">
-          <div className="admin-section-heading">
-            <h2>Workspace activity</h2>
-            <Activity size={18} />
+        <section className="admin-trust-panel">
+          <span className="admin-trust-icon">
+            <ShieldCheck size={19} />
+          </span>
+          <div>
+            <strong>Financial controls are protected</strong>
+            <p>
+              Payment confirmation, wallet adjustments, refunds, and fulfillment can only be changed
+              by verified trusted operations.
+            </p>
           </div>
-          {activity.length ? (
-            <ul className="admin-activity">
-              {activity.map((text, i) => <li key={i}><span className="sample-dot" />{text}</li>)}
-            </ul>
-          ) : (
-            <Empty icon={Activity} title="A fresh workspace" description="Draft changes during this visit will appear here." />
-          )}
         </section>
       </div>
-
-      {/* Recent orders preview */}
-      <section className="admin-section">
-        <div className="admin-section-heading">
-          <h2>Recent orders</h2>
-          <Button asChild variant="link"><Link to="/admin/orders">View all orders <ArrowUpRight /></Link></Button>
-        </div>
-        <div className="admin-table-container">
-          <table className="admin-data-table">
-            <thead><tr>
-              <th>Order ID</th><th>Customer</th><th>Item</th><th>Amount</th><th>Status</th><th>Date</th>
-            </tr></thead>
-            <tbody>
-              {orders.slice(0, 5).map(o => (
-                <tr key={o.id}>
-                  <td><span style={{ fontWeight: 700, fontFamily: 'var(--font-display)', fontSize: 11 }}>{o.id}</span></td>
-                  <td>{o.customerName}</td>
-                  <td style={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.item}</td>
-                  <td><strong>{o.amount}</strong></td>
-                  <td><PillBadge status={o.status} /></td>
-                  <td style={{ color: 'var(--muted-foreground)' }}>{o.date}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </>
+    </AdminShell>
   );
 }
 
-// ─── GAMES ───────────────────────────────────────────────────────
-export function AdminGames() {
-  const { catalog, changeGame } = useAdmin();
-  const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState('all');
-  const [editing, setEditing] = useState<AdminGame | null>(null);
-  const [error, setError] = useState('');
-  const items = catalog.filter(game =>
-    `${game.name} ${game.currency}`.toLowerCase().includes(query.toLowerCase()) &&
-    (filter === 'all' || game.enabled === (filter === 'enabled'))
-  );
-  function save(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (!editing) return;
-    const data = new FormData(e.currentTarget);
-    const result = z.object({ name: z.string().trim().min(1).max(60), currency: z.string().trim().min(1).max(30) }).safeParse({ name: data.get('name'), currency: data.get('currency') });
-    if (!result.success) { setError('Enter a game name and currency.'); return; }
-    changeGame(editing.id, result.data); setEditing(null); toast.success('Sample game draft saved');
-  }
-  return (
-    <>
-      <AdminHeading title="Games" description="Manage the four game drafts without changing the live storefront." />
-      <div className="admin-toolbar">
-        <div className="search-field"><Search size={18} /><input aria-label="Search admin games" placeholder="Search games or currency…" value={query} onChange={e => setQuery(e.target.value)} /></div>
-        <select aria-label="Filter game status" value={filter} onChange={e => setFilter(e.target.value)}>
-          <option value="all">All statuses</option><option value="enabled">Enabled</option><option value="disabled">Disabled</option>
-        </select>
-        <span>{items.length} games</span>
-      </div>
-      <div className="admin-table" role="table" aria-label="Sample games">
-        <div className="admin-table-head" role="row"><span>Game</span><span>Packages</span><span>Draft status</span><span>Actions</span></div>
-        {items.map(game => (
-          <div className="admin-table-row" role="row" key={game.id}>
-            <div className="admin-game-cell">
-              <img src={game.image} alt="Sample artwork" />
-              <div><strong>{game.name}</strong><small>{game.currency} · Sample</small></div>
-            </div>
-            <span>{game.packs.length} packages</span>
-            <label className="admin-status-toggle">
-              <input type="checkbox" role="switch" aria-label={`${game.name} enabled`} checked={game.enabled} onChange={e => { changeGame(game.id, { enabled: e.target.checked }); toast.success('Draft status updated'); }} />
-              <span>{game.enabled ? 'Enabled' : 'Disabled'}</span>
-            </label>
-            <Button variant="ghost" size="icon" aria-label={`Edit ${game.name}`} onClick={() => { setEditing(game); setError(''); }}><Pencil /></Button>
-          </div>
-        ))}
-      </div>
-      {!items.length && <Empty icon={Search} title="No matching games" description="Try a different name or status." />}
-      <Dialog open={Boolean(editing)} onOpenChange={open => { if (!open) setEditing(null); }}>
-        <DialogContent>
-          <DialogTitle>Edit sample game</DialogTitle>
-          <DialogDescription>Draft only. No live game listing changes.</DialogDescription>
-          <form onSubmit={save} className="account-form">
-            <label className="form-field">Game name<input name="name" defaultValue={editing?.name} maxLength={60} /></label>
-            <label className="form-field">Currency<input name="currency" defaultValue={editing?.currency} maxLength={30} /></label>
-            {error && <p className="field-error" role="alert">{error}</p>}
-            <Button type="submit"><Save />Save draft</Button>
-          </form>
-        </DialogContent>
-      </Dialog>
-    </>
-  );
-}
+function AdminUsersPage() {
+  const { ready, uid } = useAccount();
+  const [users, setUsers] = useState<
+    Array<{
+      uid: string;
+      memberId: string | null;
+      email: string;
+      displayName: string;
+      walletBalanceLkr: number;
+      disabled: boolean;
+      isAdmin: boolean;
+      providers: string[];
+      photoUrl: string | null;
+    }>
+  >([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [nextPageToken, setNextPageToken] = useState<string | null>(null);
+  const [adjustingUid, setAdjustingUid] = useState<string | null>(null);
+  const [adjustmentDirection, setAdjustmentDirection] = useState<"credit" | "deduct">("credit");
+  const [adjustmentAmount, setAdjustmentAmount] = useState("");
+  const [adjustmentReason, setAdjustmentReason] = useState("");
+  const [adjustmentSaving, setAdjustmentSaving] = useState(false);
+  const [userSearch, setUserSearch] = useState("");
+  const [userSearchActive, setUserSearchActive] = useState(false);
+  const [providerFilter, setProviderFilter] = useState<"all" | "google" | "email">("all");
 
-// ─── PACKAGES ────────────────────────────────────────────────────
-export function AdminPackages() {
-  const { catalog, changeGame } = useAdmin();
-  const [gameId, setGameId] = useState(catalog[0]?.id || '');
-  const [editing, setEditing] = useState<number | 'new' | null>(null);
-  const [error, setError] = useState('');
-  const [remove, setRemove] = useState<number | null>(null);
-  const game = catalog.find(g => g.id === gameId);
-  function save(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (!game) return;
-    const amount = Number(new FormData(e.currentTarget).get('amount'));
-    if (!Number.isSafeInteger(amount) || amount <= 0 || amount > 1000000) { setError('Enter a whole amount between 1 and 1,000,000.'); return; }
-    if (game.packs.includes(amount) && amount !== editing) { setError('This sample amount already exists.'); return; }
-    changeGame(game.id, { packs: (editing === 'new' ? [...game.packs, amount] : game.packs.map(n => n === editing ? amount : n)).sort((a, b) => a - b) });
-    setEditing(null); toast.success('Sample package saved');
+  const load = useCallback(
+    async (pageToken?: string, append = false) => {
+      if (!ready) return;
+      setLoading(true);
+      if (!append) {
+        setError(null);
+        setNextPageToken(null);
+        setUserSearchActive(false);
+      }
+      try {
+        const user = requireAdminSessionUser(uid);
+        const result = await listAdminUsers({
+          data: { idToken: await user.getIdToken(), pageToken },
+        });
+        setUsers((current) => (append ? [...current, ...result.users] : result.users));
+        setNextPageToken(result.nextPageToken);
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "Users could not be loaded.");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [ready, uid],
+  );
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function searchUser(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const value = userSearch.trim();
+    if (!value) {
+      setError("Enter a Firebase UID or HASA member ID to search.");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    setNextPageToken(null);
+    setUserSearchActive(true);
+    try {
+      const current = requireAdminSessionUser(uid);
+      const result = await searchAdminUser({
+        data: { idToken: await current.getIdToken(), userId: value },
+      });
+      setUsers(result.user ? [result.user] : []);
+    } catch (cause) {
+      setUsers([]);
+      setError(cause instanceof Error ? cause.message : "Customer could not be found.");
+    } finally {
+      setLoading(false);
+    }
   }
+
+  function clearUserSearch() {
+    setUserSearch("");
+    setUserSearchActive(false);
+    void load();
+  }
+
+  async function toggleDisabled(target: (typeof users)[number]) {
+    if (!target.disabled && !window.confirm(`Disable sign-in for ${target.email || target.uid}?`)) {
+      return;
+    }
+    try {
+      const current = requireAdminSessionUser(uid);
+      await setAdminUserDisabled({
+        data: {
+          idToken: await current.getIdToken(),
+          uid: target.uid,
+          disabled: !target.disabled,
+        },
+      });
+      toast.success(target.disabled ? "Customer account enabled." : "Customer account disabled.");
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Account status could not be changed.");
+    }
+  }
+
+  async function submitWalletAdjustment(
+    event: FormEvent<HTMLFormElement>,
+    target: (typeof users)[number],
+  ) {
+    event.preventDefault();
+    setError(null);
+    setAdjustmentSaving(true);
+    try {
+      const current = requireAdminSessionUser(uid);
+      await adjustAdminUserWallet({
+        data: {
+          idToken: await current.getIdToken(),
+          uid: target.uid,
+          direction: adjustmentDirection,
+          amountLkr: Number(adjustmentAmount),
+          reason: adjustmentReason,
+        },
+      });
+      toast.success(
+        adjustmentDirection === "credit" ? "Wallet balance credited." : "Wallet balance deducted.",
+      );
+      setAdjustingUid(null);
+      setAdjustmentAmount("");
+      setAdjustmentReason("");
+      await load();
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "The wallet adjustment could not be saved.",
+      );
+    } finally {
+      setAdjustmentSaving(false);
+    }
+  }
+
+  const googleLinkedCount = users.filter((user) => user.providers.includes("google.com")).length;
+  const visibleUsers =
+    providerFilter === "all"
+      ? users
+      : users.filter((user) =>
+          providerFilter === "google"
+            ? user.providers.includes("google.com")
+            : !user.providers.includes("google.com"),
+        );
+
   return (
-    <>
-      <AdminHeading title="Top-up packages" description="Sample amounts only. Prices and payments remain unavailable.">
-        <Button onClick={() => { setEditing('new'); setError(''); }}><Plus />Add sample package</Button>
-      </AdminHeading>
-      <div className="admin-game-selector" role="group" aria-label="Choose package game">
-        {catalog.map(g => (
-          <Button key={g.id} variant={g.id === gameId ? 'default' : 'outline'} onClick={() => setGameId(g.id)}>
-            <img src={g.image} alt="" />{g.name}
-          </Button>
-        ))}
-      </div>
-      <div className="admin-package-grid">
-        {game?.packs.map(amount => (
-          <article className="admin-package" key={amount}>
-            <span className="admin-badge">Sample</span>
-            <Diamond />
-            <h2>{amount.toLocaleString()} <small>{game.currency}</small></h2>
-            <p>Price not available</p>
-            <div>
-              <Button variant="outline" aria-label={`Edit ${amount} package`} onClick={() => { setEditing(amount); setError(''); }}><Pencil />Edit</Button>
-              <Button variant="ghost" size="icon" aria-label={`Delete ${amount} package`} onClick={() => setRemove(amount)}><Trash2 /></Button>
+    <AdminShell
+      title="Customer accounts"
+      description="Manage sign-in and customer wallet balances. Every credit or deduction requires a reason that appears in the customer's wallet history."
+    >
+      {!userSearchActive && (
+        <section className="admin-provider-summary" aria-label="Sign-in methods overview">
+          <article className="admin-stat-card">
+            <div className="admin-stat-card-top">
+              <span>Accounts loaded</span>
+              <Users size={15} />
             </div>
+            <p className="admin-stat-value">{users.length}</p>
+            <span className="admin-stat-foot">Firebase Auth accounts on the loaded pages</span>
           </article>
-        ))}
+          <article className="admin-stat-card is-google">
+            <div className="admin-stat-card-top">
+              <span>Google linked</span>
+              <span className="google-g-mark" aria-hidden="true">
+                G
+              </span>
+            </div>
+            <p className="admin-stat-value">{googleLinkedCount}</p>
+            <span className="admin-stat-foot">Can sign in with one tap</span>
+          </article>
+          <article className="admin-stat-card is-email">
+            <div className="admin-stat-card-top">
+              <span>Password only</span>
+              <Mail size={15} />
+            </div>
+            <p className="admin-stat-value">{users.length - googleLinkedCount}</p>
+            <span className="admin-stat-foot">No Google account linked yet</span>
+          </article>
+        </section>
+      )}
+      <form className="admin-lookup-form" onSubmit={(event) => void searchUser(event)}>
+        <input
+          id="admin-user-id-search"
+          aria-label="Search customer by Firebase UID or HASA member ID"
+          className="admin-form-input admin-lookup-input"
+          value={userSearch}
+          onChange={(event) => setUserSearch(event.target.value)}
+          placeholder="Firebase UID or HASA member ID"
+          maxLength={128}
+        />
+        <Button type="submit" className="admin-quiet-button" variant="outline" disabled={loading}>
+          <Search size={14} /> Find customer
+        </Button>
+        {userSearchActive && (
+          <Button
+            type="button"
+            className="admin-quiet-button"
+            variant="ghost"
+            onClick={clearUserSearch}
+            disabled={loading}
+          >
+            Clear search
+          </Button>
+        )}
+      </form>
+      <div className="admin-list-toolbar">
+        <p>
+          {userSearchActive
+            ? "Customer ID search result."
+            : "Showing Firebase Authentication users in pages of 100."}
+        </p>
+        <div className="admin-list-toolbar-actions">
+          {!userSearchActive && (
+            <div
+              className="admin-provider-filter"
+              role="group"
+              aria-label="Filter customers by sign-in method"
+            >
+              {(
+                [
+                  { id: "all", label: "All" },
+                  { id: "google", label: "Google" },
+                  { id: "email", label: "Password only" },
+                ] as const
+              ).map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  className={providerFilter === option.id ? "is-active" : undefined}
+                  aria-pressed={providerFilter === option.id}
+                  onClick={() => setProviderFilter(option.id)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          )}
+          <Button
+            className="admin-quiet-button"
+            variant="outline"
+            size="sm"
+            onClick={() => void load()}
+            disabled={loading}
+          >
+            <RefreshCw size={14} /> Refresh
+          </Button>
+        </div>
       </div>
-      {!game?.packs.length && <Empty icon={Diamond} title="No sample packages" description="Add an amount to this game draft." />}
-      <Dialog open={editing !== null} onOpenChange={open => { if (!open) setEditing(null); }}>
-        <DialogContent>
-          <DialogTitle>{editing === 'new' ? 'Add' : 'Edit'} sample package</DialogTitle>
-          <DialogDescription>{game?.name} · {game?.currency}. No price is assigned.</DialogDescription>
-          <form onSubmit={save} className="account-form">
-            <label className="form-field">Currency amount<input name="amount" type="number" min={1} max={1000000} step={1} defaultValue={typeof editing === 'number' ? editing : undefined} /></label>
-            {error && <p className="field-error" role="alert">{error}</p>}
-            <Button type="submit"><Save />Save package</Button>
-          </form>
-        </DialogContent>
-      </Dialog>
-      <Dialog open={remove !== null} onOpenChange={open => { if (!open) setRemove(null); }}>
-        <DialogContent>
-          <DialogTitle>Delete sample package?</DialogTitle>
-          <DialogDescription>This only removes the amount from your admin draft.</DialogDescription>
-          <Button variant="destructive" onClick={() => { if (game) { changeGame(game.id, { packs: game.packs.filter(n => n !== remove) }); toast.success('Sample package deleted'); } setRemove(null); }}><Trash2 />Delete package</Button>
-        </DialogContent>
-      </Dialog>
-    </>
-  );
-}
-
-// ─── MARKETPLACE ACCOUNTS ─────────────────────────────────────────
-export function AdminAccounts() {
-  const { accounts, changeAccountStatus, removeAccount, record } = useAdmin();
-  const [query, setQuery] = useState('');
-  const [gameFilter, setGameFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [removing, setRemoving] = useState<string | null>(null);
-  const [viewing, setViewing] = useState<AdminAccountListing | null>(null);
-
-  const items = accounts.filter(a => {
-    const matchQ = `${a.title} ${a.gameName} ${a.rank}`.toLowerCase().includes(query.toLowerCase());
-    const matchG = gameFilter === 'all' || a.gameId === gameFilter;
-    const matchS = statusFilter === 'all' || a.status === statusFilter;
-    return matchQ && matchG && matchS;
-  });
-
-  const uniqueGames = Array.from(new Set(accounts.map(a => a.gameId))).map(id => ({ id, name: accounts.find(a => a.gameId === id)!.gameName }));
-
-  return (
-    <>
-      <AdminHeading title="Game Accounts Marketplace" description="Manage premium account listings. Status changes are demo-only and do not affect the live storefront." />
-
-      {/* Toolbar */}
-      <div className="admin-toolbar" style={{ flexWrap: 'wrap', gap: 10 }}>
-        <div className="search-field"><Search size={18} /><input aria-label="Search accounts" placeholder="Search title, game, rank…" value={query} onChange={e => setQuery(e.target.value)} /></div>
-        <select aria-label="Filter by game" value={gameFilter} onChange={e => setGameFilter(e.target.value)}>
-          <option value="all">All games</option>
-          {uniqueGames.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-        </select>
-        <select aria-label="Filter by status" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-          <option value="all">All statuses</option>
-          <option value="Available">Available</option>
-          <option value="Reserved">Reserved</option>
-          <option value="Sold">Sold</option>
-        </select>
-        <span style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>{items.length} listing{items.length !== 1 ? 's' : ''}</span>
-      </div>
-
-      {/* Account cards grid */}
-      {items.length ? (
-        <div className="admin-acc-grid">
-          {items.map(acc => (
-            <div className="admin-acc-card" key={acc.id}>
-              <div className="admin-acc-media">
-                <img src={acc.image} alt={acc.title} />
-                <div className="admin-acc-top-badges">
-                  <PillBadge status={acc.status} />
-                  {acc.verified && <span className="admin-pill pill-success">Verified</span>}
-                </div>
-                <span className="admin-acc-price-badge">{acc.priceSample}</span>
-              </div>
-              <div className="admin-acc-body">
-                <p className="admin-acc-title">{acc.title}</p>
-                <div className="admin-acc-meta-grid">
-                  <div><span style={{ fontSize: 10, color: 'var(--muted-foreground)' }}>Game</span><br /><strong>{acc.gameName}</strong></div>
-                  <div><span style={{ fontSize: 10, color: 'var(--muted-foreground)' }}>Rank</span><br /><strong>{acc.rank}</strong></div>
-                  <div><span style={{ fontSize: 10, color: 'var(--muted-foreground)' }}>Level</span><br /><strong>{acc.level}</strong></div>
-                  <div><span style={{ fontSize: 10, color: 'var(--muted-foreground)' }}>Server</span><br /><strong>{acc.server}</strong></div>
-                </div>
-                <div className="admin-acc-actions">
-                  <select
-                    aria-label={`Change status for ${acc.title}`}
-                    value={acc.status}
-                    onChange={e => { changeAccountStatus(acc.id, e.target.value as any); toast.success(`Status updated to ${e.target.value}`); }}
-                    style={{ fontSize: 11, borderRadius: 6, border: '1px solid var(--border)', padding: '4px 8px', background: 'var(--muted)', color: 'var(--foreground)', cursor: 'pointer' }}
-                  >
-                    <option value="Available">Available</option>
-                    <option value="Reserved">Reserved</option>
-                    <option value="Sold">Sold</option>
-                  </select>
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    <Button variant="ghost" size="icon" aria-label={`View ${acc.title}`} title="View details" onClick={() => setViewing(acc)}><Eye /></Button>
-                    <Button asChild variant="ghost" size="icon" aria-label={`Open ${acc.title} page`} title="View storefront page"><Link to={`/accounts/${acc.id}` as any}><ExternalLink /></Link></Button>
-                    <Button variant="ghost" size="icon" aria-label={`Remove ${acc.title}`} title="Remove listing" onClick={() => setRemoving(acc.id)}><Trash2 /></Button>
+      {error && (
+        <p className="admin-error-banner" role="alert">
+          {error}
+        </p>
+      )}
+      {loading ? (
+        <p role="status">Loading customers…</p>
+      ) : (
+        <div className="admin-customer-list">
+          {visibleUsers.map((user) => (
+            <div className="admin-customer-entry" key={user.uid}>
+              <article className="admin-customer-row">
+                <span className="admin-customer-avatar">
+                  {user.photoUrl ? (
+                    <img
+                      src={user.photoUrl}
+                      alt=""
+                      referrerPolicy="no-referrer"
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  ) : (
+                    (user.displayName || user.email || "C").charAt(0).toUpperCase()
+                  )}
+                </span>
+                <div className="admin-customer-main">
+                  <p>{user.displayName || "Customer"}</p>
+                  <span>{user.email || "No email address"}</span>
+                  <code className="admin-customer-member-id">
+                    {user.memberId ?? "Member ID pending next sign-in"}
+                  </code>
+                  <span className="admin-customer-balance">
+                    Wallet balance: Rs. {user.walletBalanceLkr.toLocaleString()}
+                  </span>
+                  <div className="admin-customer-providers">
+                    {user.providers.includes("google.com") && (
+                      <span className="admin-provider-badge is-google">
+                        <span className="google-g-mark" aria-hidden="true">
+                          G
+                        </span>
+                        Google
+                      </span>
+                    )}
+                    {user.providers.includes("password") && (
+                      <span className="admin-provider-badge is-email">
+                        <Mail size={9} aria-hidden="true" />
+                        Email
+                      </span>
+                    )}
                   </div>
                 </div>
-              </div>
+                <span
+                  className={`admin-status-pill ${user.disabled ? "is-muted" : user.isAdmin ? "is-success" : "is-pending"}`}
+                >
+                  <i />
+                  {user.isAdmin ? "Administrator" : user.disabled ? "Disabled" : "Active"}
+                </span>
+                <Button
+                  className="admin-quiet-button"
+                  variant="outline"
+                  size="sm"
+                  aria-label={`Adjust wallet for ${user.displayName || user.email || user.uid}`}
+                  onClick={() => {
+                    setAdjustingUid((current) => (current === user.uid ? null : user.uid));
+                    setAdjustmentDirection("credit");
+                    setAdjustmentAmount("");
+                    setAdjustmentReason("");
+                    setError(null);
+                  }}
+                >
+                  Wallet adjustment
+                </Button>
+                {!user.isAdmin && (
+                  <Button
+                    className="admin-quiet-button"
+                    variant={user.disabled ? "outline" : "destructive"}
+                    size="sm"
+                    onClick={() => void toggleDisabled(user)}
+                  >
+                    {user.disabled ? "Re-enable sign-in" : "Disable sign-in"}
+                  </Button>
+                )}
+              </article>
+              {adjustingUid === user.uid && (
+                <form
+                  className="admin-wallet-adjustment"
+                  onSubmit={(event) => void submitWalletAdjustment(event, user)}
+                >
+                  <label className="admin-form-field">
+                    <span className="admin-field-label">Adjustment</span>
+                    <select
+                      className="admin-form-input admin-form-select"
+                      value={adjustmentDirection}
+                      onChange={(event) => {
+                        if (event.target.value === "credit" || event.target.value === "deduct") {
+                          setAdjustmentDirection(event.target.value);
+                        }
+                      }}
+                    >
+                      <option value="credit">Credit</option>
+                      <option value="deduct">Deduct</option>
+                    </select>
+                  </label>
+                  <label className="admin-form-field">
+                    <span className="admin-field-label">Amount (LKR)</span>
+                    <input
+                      className="admin-form-input"
+                      type="number"
+                      min="1"
+                      max="10000000"
+                      step="1"
+                      required
+                      value={adjustmentAmount}
+                      onChange={(event) => setAdjustmentAmount(event.target.value)}
+                    />
+                  </label>
+                  <label className="admin-form-field admin-wallet-adjustment-reason">
+                    <span className="admin-field-label">Reason (shown to customer)</span>
+                    <input
+                      className="admin-form-input"
+                      type="text"
+                      minLength={3}
+                      maxLength={500}
+                      required
+                      value={adjustmentReason}
+                      onChange={(event) => setAdjustmentReason(event.target.value)}
+                    />
+                  </label>
+                  <div className="admin-wallet-adjustment-actions">
+                    <Button type="submit" disabled={adjustmentSaving}>
+                      {adjustmentSaving ? "Saving…" : "Apply adjustment"}
+                    </Button>
+                    <Button
+                      type="button"
+                      className="admin-quiet-button"
+                      variant="outline"
+                      onClick={() => setAdjustingUid(null)}
+                      disabled={adjustmentSaving}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </form>
+              )}
             </div>
           ))}
+          {users.length === 0 && (
+            <div className="admin-empty-state">
+              <Users size={24} />
+              <strong>{userSearchActive ? "No matching customer" : "No customers found"}</strong>
+              <span>
+                {userSearchActive
+                  ? "Check the Firebase UID or HASA member ID and try again."
+                  : "Customer accounts will appear here after registration."}
+              </span>
+            </div>
+          )}
+          {users.length > 0 && visibleUsers.length === 0 && (
+            <div className="admin-empty-state">
+              <Users size={24} />
+              <strong>No accounts match this sign-in filter</strong>
+              <span>Switch back to "All" to see every loaded customer.</span>
+            </div>
+          )}
         </div>
-      ) : (
-        <Empty icon={Layers} title="No matching accounts" description="Try a different search, game, or status filter." />
       )}
+      {nextPageToken && !userSearchActive && (
+        <Button
+          className="mt-4"
+          variant="outline"
+          onClick={() => void load(nextPageToken, true)}
+          disabled={loading}
+        >
+          {loading ? "Loading…" : "Load more customers"}
+        </Button>
+      )}
+    </AdminShell>
+  );
+}
 
-      {/* View details dialog */}
-      <Dialog open={Boolean(viewing)} onOpenChange={open => { if (!open) setViewing(null); }}>
-        <DialogContent>
-          <DialogTitle>{viewing?.title}</DialogTitle>
-          <DialogDescription>{viewing?.tagline}</DialogDescription>
-          {viewing && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <img src={viewing.image} alt={viewing.title} style={{ borderRadius: 8, height: 140, objectFit: 'cover', width: '100%' }} />
-              <div className="admin-acc-meta-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 10, background: 'var(--muted)', borderRadius: 8, padding: 12 }}>
-                {viewing.features.map(f => (
-                  <div key={f.label}><span style={{ fontSize: 10, color: 'var(--muted-foreground)' }}>{f.label}</span><br /><strong style={{ fontSize: 12 }}>{f.value}</strong></div>
-                ))}
+const templates: Record<"games" | "products" | "gameAccounts", AdminRecord> = {
+  games: {
+    slug: "new-game",
+    name: "",
+    currency: "",
+    tone: "ice",
+    icon: "diamond",
+    artworkKey: "",
+    description: "",
+    serverOptions: [],
+    active: true,
+    displayOrder: 0,
+  },
+  products: {
+    id: "new-product",
+    gameSlug: "",
+    category: "diamonds",
+    amount: 1,
+    unitLabel: "",
+    name: "",
+    priceUsd: 0,
+    pricePkr: 0,
+    bonus: 0,
+    isPopular: false,
+    isBestValue: false,
+    isVip: false,
+    active: true,
+    displayOrder: 0,
+  },
+  gameAccounts: {
+    id: "new-account",
+    gameId: "",
+    gameName: "",
+    title: "",
+    tagline: "",
+    priceUsd: 0,
+    pricePkr: 0,
+    priceSample: "",
+    level: 0,
+    rank: "",
+    server: "",
+    loginType: "",
+    artworkKey: "",
+    tone: "ice",
+    verified: false,
+    status: "Available",
+    badges: [],
+    inventoryHighlights: [],
+    description: "",
+    features: [],
+    active: false,
+    displayOrder: 0,
+  },
+};
+
+export function AdminLayout() {
+  return <Outlet />;
+}
+
+export function AdminPasswordLogin({ redirect }: { redirect: string }) {
+  const navigate = useNavigate();
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      const result = await signInWithAdminPassword({ data: { password } });
+      await signInWithCustomToken(getFirebaseAuth(), result.token);
+      window.location.assign(redirect);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Admin sign-in failed.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <main className="container admin-password-login">
+      <section className="admin-panel">
+        <span className="admin-page-eyebrow">
+          <ShieldCheck size={13} /> SECURE STORE ACCESS
+        </span>
+        <h1>Admin sign in</h1>
+        <p>Enter the temporary admin password configured by the store owner.</p>
+        <form onSubmit={(event) => void submit(event)}>
+          <label className="admin-form-field">
+            <span className="admin-field-label">Admin password</span>
+            <input
+              className="admin-form-input"
+              type="password"
+              autoComplete="current-password"
+              required
+              value={password}
+              onChange={(event) => setPassword(event.currentTarget.value)}
+            />
+          </label>
+          {error && (
+            <p className="admin-error-banner" role="alert">
+              {error}
+            </p>
+          )}
+          <Button type="submit" disabled={submitting || !password}>
+            {submitting ? "Signing in…" : "Sign in to Admin"}
+          </Button>
+        </form>
+        <p className="admin-helper-copy">
+          This temporary sign-in creates a Firebase session for an account already on the server
+          admin allowlist. It does not change the Firestore profile role.
+        </p>
+      </section>
+    </main>
+  );
+}
+
+export function AdminOverview() {
+  return <OverviewContent />;
+}
+export function AdminGames() {
+  return (
+    <AdminDataPage
+      title="Games"
+      description="Create, edit, and archive Firestore game catalog entries."
+      collection="games"
+      template={templates.games}
+    />
+  );
+}
+export function AdminPackages() {
+  return (
+    <AdminDataPage
+      title="Top-up packages"
+      description="Manage package names, delivery details, and LKR prices. Archived packages stay hidden from customers."
+      collection="products"
+      template={templates.products}
+    />
+  );
+}
+export function AdminAccounts() {
+  return (
+    <AdminDataPage
+      title="Marketplace accounts"
+      description="Manage informational listings. Listings default inactive and this site does not process account sales."
+      collection="gameAccounts"
+      template={templates.gameAccounts}
+    />
+  );
+}
+export function AdminOrders() {
+  return <AdminOrdersPage />;
+}
+
+const ORDER_STATUSES: readonly OrderStatus[] = [
+  "pending",
+  "payment_review",
+  "paid",
+  "processing",
+  "completed",
+  "delivered",
+  "failed",
+  "cancelled",
+  "refunded",
+];
+const PAYMENT_STATUSES: readonly PaymentStatus[] = [
+  "unpaid",
+  "proof_submitted",
+  "paid",
+  "failed",
+  "proof_rejected",
+  "refunded",
+];
+
+function isOrderStatus(value: unknown): value is OrderStatus {
+  return typeof value === "string" && (ORDER_STATUSES as readonly string[]).includes(value);
+}
+function isPaymentStatus(value: unknown): value is PaymentStatus {
+  return typeof value === "string" && (PAYMENT_STATUSES as readonly string[]).includes(value);
+}
+
+function AdminOrdersPage() {
+  const { ready, uid } = useAccount();
+  const [orders, setOrders] = useState<AdminDocument[]>([]);
+  const [drafts, setDrafts] = useState<
+    Record<string, { status: OrderStatus; paymentStatus: PaymentStatus }>
+  >({});
+  const [proofUrls, setProofUrls] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [nextPageToken, setNextPageToken] = useState<string | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [proofLoadingId, setProofLoadingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [orderSearch, setOrderSearch] = useState("");
+  const [orderSearchActive, setOrderSearchActive] = useState(false);
+
+  const load = useCallback(
+    async (pageToken?: string, append = false) => {
+      if (!ready) return;
+      setLoading(true);
+      if (!append) {
+        setError(null);
+        setOrderSearchActive(false);
+      }
+      try {
+        const currentUser = requireAdminSessionUser(uid);
+        const result = await listAdminRecords({
+          data: { idToken: await currentUser.getIdToken(), collection: "orders", pageToken },
+        });
+        setOrders((current) => (append ? [...current, ...result.items] : result.items));
+        setDrafts((current) => ({
+          ...(append ? current : {}),
+          ...Object.fromEntries(
+            result.items.map((order) => [
+              order.id,
+              {
+                status: isOrderStatus(order["status"]) ? order["status"] : "pending",
+                paymentStatus: isPaymentStatus(order["paymentStatus"])
+                  ? order["paymentStatus"]
+                  : "unpaid",
+              },
+            ]),
+          ),
+        }));
+        setNextPageToken(result.nextPageToken);
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "Orders could not be loaded.");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [ready, uid],
+  );
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function searchOrder(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const value = orderSearch.trim();
+    if (!value) {
+      setError("Enter an order number to search.");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    setNextPageToken(null);
+    setOrderSearchActive(true);
+    try {
+      const currentUser = requireAdminSessionUser(uid);
+      const result = await searchAdminOrder({
+        data: { idToken: await currentUser.getIdToken(), orderId: value },
+      });
+      const found = result.order ? [result.order] : [];
+      setOrders(found);
+      setDrafts((current) => ({
+        ...current,
+        ...Object.fromEntries(
+          found.map((order) => [
+            order.id,
+            {
+              status: isOrderStatus(order["status"]) ? order["status"] : "pending",
+              paymentStatus: isPaymentStatus(order["paymentStatus"])
+                ? order["paymentStatus"]
+                : "unpaid",
+            },
+          ]),
+        ),
+      }));
+    } catch (cause) {
+      setOrders([]);
+      setError(cause instanceof Error ? cause.message : "Order could not be found.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function clearOrderSearch() {
+    setOrderSearch("");
+    setOrderSearchActive(false);
+    void load();
+  }
+
+  async function saveStatus(orderId: string) {
+    const draft = drafts[orderId];
+    if (!draft) {
+      setError("Choose valid order statuses before saving.");
+      return;
+    }
+    setSavingId(orderId);
+    setError(null);
+    try {
+      const currentUser = requireAdminSessionUser(uid);
+      const result = await updateAdminOrderStatus({
+        data: { idToken: await currentUser.getIdToken(), orderId, ...draft },
+      });
+      setOrders((current) =>
+        current.map((order) =>
+          order.id === orderId
+            ? {
+                ...order,
+                status: draft.status,
+                paymentStatus: draft.paymentStatus,
+                ...(result.nexauraSubmission
+                  ? {
+                      nexauraStatus: result.nexauraSubmission.status,
+                      ...(result.nexauraSubmission.orderId
+                        ? { nexauraOrderId: result.nexauraSubmission.orderId }
+                        : {}),
+                      ...(result.nexauraSubmission.message
+                        ? { nexauraLastError: result.nexauraSubmission.message }
+                        : {}),
+                    }
+                  : {}),
+              }
+            : order,
+        ),
+      );
+      if (result.emailNotificationSent) {
+        toast.success("Order status updated and customer emailed.");
+      } else if (result.emailNotificationAttempted) {
+        toast.success("Order status updated.", {
+          description: "Customer email was not sent. Check server configuration and logs.",
+        });
+      } else {
+        toast.success("Order status unchanged.");
+      }
+      if (result.nexauraSubmission?.status === "submission_failed") {
+        toast.error("Nexaura top-up was not submitted", {
+          description: result.nexauraSubmission.message,
+        });
+      } else if (result.nexauraSubmission?.status === "submission_unknown") {
+        toast.error("Nexaura submission status is unknown", {
+          description:
+            result.nexauraSubmission.message ??
+            "Retry by saving the paid status again; the same idempotency key will be reused.",
+        });
+      } else if (result.nexauraSubmission?.status === "processing") {
+        toast.info("Nexaura accepted the top-up", {
+          description: `Provider order ${result.nexauraSubmission.orderId} is processing.`,
+        });
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Order status could not be updated.");
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  async function loadProof(orderId: string) {
+    setProofLoadingId(orderId);
+    setError(null);
+    try {
+      const currentUser = requireAdminSessionUser(uid);
+      const result = await getAdminOrderProofUrl({
+        data: { idToken: await currentUser.getIdToken(), orderId },
+      });
+      setProofUrls((current) => ({ ...current, [orderId]: result.url }));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Payment proof could not be opened.");
+    } finally {
+      setProofLoadingId(null);
+    }
+  }
+
+  const failedOrderCount = orders.filter(
+    (order) =>
+      order["gameSlug"] === "free-fire" && nexauraFailureKind(order["nexauraStatus"]) !== null,
+  ).length;
+
+  return (
+    <AdminShell
+      title="Orders"
+      description="Review payment proofs and update order statuses. Marking a Free Fire order paid submits its configured package to Nexaura automatically."
+    >
+      <section className="admin-panel admin-records-panel">
+        <form className="admin-lookup-form" onSubmit={(event) => void searchOrder(event)}>
+          <input
+            id="admin-order-id-search"
+            aria-label="Search by order number"
+            className="admin-form-input admin-lookup-input"
+            value={orderSearch}
+            onChange={(event) => setOrderSearch(event.target.value)}
+            placeholder="Enter order number"
+            maxLength={128}
+          />
+          <Button type="submit" className="admin-quiet-button" variant="outline" disabled={loading}>
+            <Search size={14} /> Find order
+          </Button>
+          {orderSearchActive && (
+            <Button
+              type="button"
+              className="admin-quiet-button"
+              variant="ghost"
+              onClick={clearOrderSearch}
+              disabled={loading}
+            >
+              Clear search
+            </Button>
+          )}
+        </form>
+        <div className="admin-panel-header">
+          <div>
+            <span className="admin-panel-eyebrow">LIVE COLLECTION</span>
+            <h2>
+              Firestore orders <span className="admin-count-pill">{orders.length}</span>
+            </h2>
+          </div>
+          <Button
+            className="admin-quiet-button"
+            variant="outline"
+            size="sm"
+            onClick={() => void load()}
+            disabled={loading}
+          >
+            <RefreshCw size={14} /> Refresh
+          </Button>
+        </div>
+        {failedOrderCount > 0 && (
+          <div className="admin-failure-callout" role="status">
+            <AlertTriangle size={15} />
+            <span>
+              {failedOrderCount}{" "}
+              {failedOrderCount === 1 ? "order on this page needs" : "orders on this page need"}{" "}
+              automatic top-up attention.
+            </span>
+            <Link to="/admin/topup-failures">Review top-up failures</Link>
+          </div>
+        )}
+        {error && (
+          <p className="admin-error-banner" role="alert">
+            {error}
+          </p>
+        )}
+        {loading ? (
+          <div className="admin-loading-state" role="status">
+            <span className="admin-loading-orb" /> Loading orders…
+          </div>
+        ) : orders.length === 0 ? (
+          <div className="admin-empty-state">
+            <ReceiptText size={24} />
+            <strong>{orderSearchActive ? "No matching order" : "No orders yet"}</strong>
+            <span>
+              {orderSearchActive
+                ? "Check the order number and try again."
+                : "Customer orders will appear here."}
+            </span>
+          </div>
+        ) : (
+          <div className="admin-record-list">
+            {orders.map((order) => {
+              const draft = drafts[order.id] ?? { status: "pending", paymentStatus: "unpaid" };
+              const hasProof = typeof order["paymentProofStoragePath"] === "string";
+              const failureKind =
+                order["gameSlug"] === "free-fire"
+                  ? nexauraFailureKind(order["nexauraStatus"])
+                  : null;
+              const failureTone = failureKind === "submission_unknown" ? "is-warning" : "is-danger";
+              const failureRowTone =
+                failureKind === "submission_unknown" ? "is-nexaura-warning" : "is-nexaura-failed";
+              return (
+                <article
+                  key={order.id}
+                  className={`admin-record-row admin-order-row${failureKind ? ` ${failureRowTone}` : ""}`}
+                >
+                  <span className={`admin-record-symbol${failureKind ? ` ${failureTone}` : ""}`}>
+                    {failureKind ? <AlertTriangle size={17} /> : <ReceiptText size={17} />}
+                  </span>
+                  <div className="admin-record-main">
+                    <div className="admin-record-headline">
+                      <p className="admin-record-title">
+                        {String(order["packageName"] ?? "Top-up order")}
+                      </p>
+                      {failureKind && (
+                        <span className={`admin-status-pill ${failureTone}`}>
+                          <i /> {nexauraFailureLabel(failureKind)}
+                        </span>
+                      )}
+                    </div>
+                    <p className="admin-record-meta">
+                      <code>{order.id}</code>
+                      <span>·</span>
+                      {String(order["customerEmail"] ?? order["customerUid"] ?? "Customer")}
+                      <span>·</span>
+                      {String(order["gameName"] ?? order["gameSlug"] ?? "")}
+                      <span>·</span>
+                      Player {String(order["playerId"] ?? "—")}
+                      <span>·</span>
+                      LKR {Number(order["pricePkr"] ?? 0).toLocaleString()}
+                      <span>·</span>
+                      {String(order["paymentMethod"] ?? "Unknown method")}
+                    </p>
+                    {order["gameSlug"] === "free-fire" && (
+                      <p className="admin-record-meta">
+                        Nexaura: {String(order["nexauraStatus"] ?? "awaiting payment")}
+                        {typeof order["nexauraOrderId"] === "string" && (
+                          <>
+                            <span>·</span>
+                            Provider order {order["nexauraOrderId"]}
+                          </>
+                        )}
+                        <span>·</span>
+                        {formatDateTime(order["createdAt"])}
+                      </p>
+                    )}
+                    {failureKind && (
+                      <p className={`admin-nexaura-reason ${failureTone}`}>
+                        <AlertTriangle size={13} />
+                        <span>
+                          <strong>{nexauraFailureLabel(failureKind)}:</strong>{" "}
+                          {nexauraFailureReason(order)}
+                        </span>
+                      </p>
+                    )}
+                    <div className="admin-order-controls">
+                      <label>
+                        Order status
+                        <select
+                          className="admin-form-input admin-form-select"
+                          value={draft.status}
+                          onChange={(event) => {
+                            const status = event.target.value;
+                            if (!isOrderStatus(status)) return;
+                            setDrafts((current) => ({
+                              ...current,
+                              [order.id]: {
+                                ...draft,
+                                status,
+                              },
+                            }));
+                          }}
+                        >
+                          {ORDER_STATUSES.map((status) => (
+                            <option value={status} key={status}>
+                              {status.replaceAll("_", " ")}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        Payment status
+                        <select
+                          className="admin-form-input admin-form-select"
+                          value={draft.paymentStatus}
+                          onChange={(event) => {
+                            const paymentStatus = event.target.value;
+                            if (!isPaymentStatus(paymentStatus)) return;
+                            setDrafts((current) => ({
+                              ...current,
+                              [order.id]: {
+                                ...draft,
+                                paymentStatus,
+                              },
+                            }));
+                          }}
+                        >
+                          {PAYMENT_STATUSES.map((status) => (
+                            <option value={status} key={status}>
+                              {status.replaceAll("_", " ")}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <Button
+                        className="admin-primary-button"
+                        size="sm"
+                        disabled={savingId === order.id}
+                        onClick={() => void saveStatus(order.id)}
+                      >
+                        {savingId === order.id ? "Saving…" : "Save statuses"}
+                      </Button>
+                      {hasProof &&
+                        (proofUrls[order.id] ? (
+                          <a href={proofUrls[order.id]} target="_blank" rel="noreferrer">
+                            View payment proof
+                          </a>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={proofLoadingId === order.id}
+                            onClick={() => void loadProof(order.id)}
+                          >
+                            {proofLoadingId === order.id ? "Preparing…" : "View payment proof"}
+                          </Button>
+                        ))}
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+        {nextPageToken && !orderSearchActive && (
+          <Button
+            className="admin-load-more"
+            variant="outline"
+            onClick={() => void load(nextPageToken, true)}
+            disabled={loading}
+          >
+            {loading ? "Loading…" : "Load more orders"}
+          </Button>
+        )}
+      </section>
+    </AdminShell>
+  );
+}
+type NexauraFailureFilter = "all" | NexauraFailureKind;
+
+const NEXAURA_FAILURE_FILTERS: ReadonlyArray<{ id: NexauraFailureFilter; label: string }> = [
+  { id: "all", label: "All" },
+  { id: "failed", label: "Delivery failed" },
+  { id: "submission_failed", label: "Submission failed" },
+  { id: "submission_unknown", label: "Needs review" },
+];
+
+export function AdminTopupFailures() {
+  const { ready, uid } = useAccount();
+  const [items, setItems] = useState<AdminDocument[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<NexauraFailureFilter>("all");
+  const [query, setQuery] = useState("");
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!ready) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const currentUser = requireAdminSessionUser(uid);
+      const result = await listNexauraFailures({
+        data: { idToken: await currentUser.getIdToken() },
+      });
+      setItems(result.items);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Top-up failures could not be loaded.");
+    } finally {
+      setLoading(false);
+    }
+  }, [ready, uid]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const counts = {
+    total: items.length,
+    failed: items.filter((order) => nexauraFailureKind(order["nexauraStatus"]) === "failed").length,
+    submissionFailed: items.filter(
+      (order) => nexauraFailureKind(order["nexauraStatus"]) === "submission_failed",
+    ).length,
+    submissionUnknown: items.filter(
+      (order) => nexauraFailureKind(order["nexauraStatus"]) === "submission_unknown",
+    ).length,
+  };
+
+  const needle = query.trim().toLowerCase();
+  const visible = items.filter((order) => {
+    const kind = nexauraFailureKind(order["nexauraStatus"]);
+    if (filter !== "all" && kind !== filter) return false;
+    if (!needle) return true;
+    return [
+      order.id,
+      order["orderId"],
+      order["customerEmail"],
+      order["playerId"],
+      order["nexauraOrderId"],
+    ]
+      .filter((value): value is string => typeof value === "string")
+      .some((value) => value.toLowerCase().includes(needle));
+  });
+
+  async function copyOrderId(orderId: string) {
+    try {
+      await navigator.clipboard.writeText(orderId);
+      setCopiedId(orderId);
+      setTimeout(() => setCopiedId((current) => (current === orderId ? null : current)), 1800);
+      toast.success("Order number copied");
+    } catch {
+      toast.error("Could not copy the order number.");
+    }
+  }
+
+  return (
+    <AdminShell
+      title="Top-up failures"
+      description="Free Fire orders where Nexaura reported a failed delivery, a rejected submission, or an unconfirmed top-up — with the recorded provider reason."
+    >
+      <div className="admin-stat-grid admin-topup-stats">
+        <div className="admin-stat-card">
+          <div className="admin-stat-card-top">
+            <span>Open issues</span>
+            <AlertTriangle size={18} />
+          </div>
+          <p className="admin-stat-value">{counts.total.toLocaleString()}</p>
+          <span className="admin-stat-foot">Failed or unconfirmed top-ups</span>
+        </div>
+        <div className="admin-stat-card">
+          <div className="admin-stat-card-top">
+            <span>Delivery failed</span>
+            <AlertTriangle size={18} />
+          </div>
+          <p className="admin-stat-value">{counts.failed.toLocaleString()}</p>
+          <span className="admin-stat-foot">Nexaura reported a failed delivery</span>
+        </div>
+        <div className="admin-stat-card">
+          <div className="admin-stat-card-top">
+            <span>Submission failed</span>
+            <AlertTriangle size={18} />
+          </div>
+          <p className="admin-stat-value">{counts.submissionFailed.toLocaleString()}</p>
+          <span className="admin-stat-foot">Provider rejected the request</span>
+        </div>
+        <div className="admin-stat-card">
+          <div className="admin-stat-card-top">
+            <span>Needs review</span>
+            <AlertTriangle size={18} />
+          </div>
+          <p className="admin-stat-value">{counts.submissionUnknown.toLocaleString()}</p>
+          <span className="admin-stat-foot">Provider reply was not confirmed</span>
+        </div>
+      </div>
+
+      <section className="admin-panel admin-records-panel">
+        <div className="admin-panel-header">
+          <div>
+            <span className="admin-panel-eyebrow">PROVIDER FAILURES</span>
+            <h2>
+              Automatic top-up issues <span className="admin-count-pill">{visible.length}</span>
+            </h2>
+          </div>
+          <Button
+            className="admin-quiet-button"
+            variant="outline"
+            size="sm"
+            onClick={() => void load()}
+            disabled={loading}
+          >
+            <RefreshCw size={14} /> Refresh
+          </Button>
+        </div>
+        <div className="admin-failure-toolbar">
+          <input
+            aria-label="Search top-up failures"
+            className="admin-form-input admin-lookup-input"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search order, customer, player or provider ID"
+            maxLength={128}
+          />
+          <div className="admin-provider-filter" role="group" aria-label="Filter top-up failures">
+            {NEXAURA_FAILURE_FILTERS.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                className={filter === option.id ? "is-active" : ""}
+                onClick={() => setFilter(option.id)}
+                aria-pressed={filter === option.id}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {error && (
+          <p className="admin-error-banner" role="alert">
+            {error}
+          </p>
+        )}
+        {loading ? (
+          <div className="admin-loading-state" role="status">
+            <span className="admin-loading-orb" /> Loading top-up failures…
+          </div>
+        ) : visible.length === 0 ? (
+          <div className="admin-empty-state">
+            <ShieldCheck size={24} />
+            <strong>{items.length === 0 ? "No top-up failures" : "No matching failures"}</strong>
+            <span>
+              {items.length === 0
+                ? "When Nexaura reports a failed or unconfirmed top-up, it appears here with the provider reason."
+                : "Adjust the search text or filter to see other failures."}
+            </span>
+          </div>
+        ) : (
+          <div className="admin-record-list">
+            {visible.map((order) => {
+              const kind = nexauraFailureKind(order["nexauraStatus"]) ?? "failed";
+              const tone = kind === "submission_unknown" ? "is-warning" : "is-danger";
+              const rowTone =
+                kind === "submission_unknown" ? "is-nexaura-warning" : "is-nexaura-failed";
+              return (
+                <article key={order.id} className={`admin-record-row admin-order-row ${rowTone}`}>
+                  <span className={`admin-record-symbol ${tone}`}>
+                    <AlertTriangle size={17} />
+                  </span>
+                  <div className="admin-record-main">
+                    <div className="admin-record-headline">
+                      <p className="admin-record-title">
+                        {String(order["packageName"] ?? "Top-up order")}
+                      </p>
+                      <span className={`admin-status-pill ${tone}`}>
+                        <i /> {nexauraFailureLabel(kind)}
+                      </span>
+                    </div>
+                    <p className="admin-record-meta">
+                      <code>{order.id}</code>
+                      <span>·</span>
+                      {String(order["customerEmail"] ?? order["customerUid"] ?? "Customer")}
+                      <span>·</span>
+                      Player {String(order["playerId"] ?? "—")}
+                      <span>·</span>
+                      LKR {Number(order["pricePkr"] ?? 0).toLocaleString()}
+                      <span>·</span>
+                      {formatDateTime(order["createdAt"])}
+                    </p>
+                    <p className={`admin-nexaura-reason ${tone}`}>
+                      <AlertTriangle size={13} />
+                      <span>
+                        <strong>Reason:</strong> {nexauraFailureReason(order)}
+                      </span>
+                    </p>
+                    <div className="admin-order-controls">
+                      {typeof order["nexauraOrderId"] === "string" && (
+                        <span className="admin-failure-provider">
+                          Provider order {order["nexauraOrderId"]}
+                        </span>
+                      )}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void copyOrderId(order.id)}
+                      >
+                        {copiedId === order.id ? <Check size={13} /> : <Copy size={13} />}{" "}
+                        {copiedId === order.id ? "Copied" : "Copy order number"}
+                      </Button>
+                      <Link to="/admin/orders">Open orders</Link>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </section>
+    </AdminShell>
+  );
+}
+
+export function AdminDepositRecords() {
+  return (
+    <AdminDataPage
+      title="Wallet deposits"
+      description="Review provider-verified eZ Cash deposit records; wallet credit remains controlled by the trusted verification service."
+      collection="wallet_deposits"
+      readOnly
+    />
+  );
+}
+export function AdminSupport() {
+  return <AdminSettingsPage mode="faqs" />;
+}
+export function AdminSettings() {
+  return <AdminSettingsPage mode="settings" />;
+}
+export function AdminPaymentMethods() {
+  const { ready, uid } = useAccount();
+  const [methods, setMethods] = useState<PaymentMethodConfig[]>(
+    DEFAULT_PAYMENT_METHODS.map((method) => ({ ...method })),
+  );
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!ready) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const user = requireAdminSessionUser(uid);
+      const idToken = await user.getIdToken();
+      await verifyAdminAccess({ data: { idToken } });
+      const { getDoc, doc, getFirestore } = await import("firebase/firestore");
+      const { getFirebaseApp } = await import("@/lib/firebase");
+      const snapshot = await getDoc(doc(getFirestore(getFirebaseApp()), "settings", "store"));
+      setMethods(
+        parsePaymentMethods(snapshot.exists() ? snapshot.data()["paymentMethods"] : undefined),
+      );
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Payment methods could not be loaded.");
+    } finally {
+      setLoading(false);
+    }
+  }, [ready, uid]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  function updateMethod(
+    id: PaymentMethodConfig["id"],
+    changes: Partial<Omit<PaymentMethodConfig, "id">>,
+  ) {
+    setMethods((current) =>
+      current.map((method) => (method.id === id ? { ...method, ...changes } : method)),
+    );
+  }
+
+  async function save() {
+    setError(null);
+    setSaving(true);
+    try {
+      const user = requireAdminSessionUser(uid);
+      await saveAdminPaymentMethods({
+        data: { idToken: await user.getIdToken(), methods },
+      });
+      toast.success("Payment methods saved.");
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Payment methods could not be saved.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <AdminShell
+      title="Payment methods"
+      description="Edit the payment options customers see at checkout."
+    >
+      {error && (
+        <p className="admin-error-banner" role="alert">
+          {error}
+        </p>
+      )}
+      {loading ? (
+        <p role="status">Loading payment methods…</p>
+      ) : (
+        <section className="admin-panel admin-settings-panel">
+          <div className="admin-panel-header">
+            <div>
+              <span className="admin-panel-eyebrow">CHECKOUT CONFIGURATION</span>
+              <h2>Available payment methods</h2>
+            </div>
+            <span className="admin-settings-doc">
+              <Database size={14} /> settings/store
+            </span>
+          </div>
+          <p className="admin-helper-copy">
+            Only Wallet and eZ Cash are supported. Paused methods are hidden from new checkouts and
+            blocked by the order service. eZ Cash account details remain in Store Settings.
+          </p>
+          <div className="admin-form-grid">
+            {methods.map((method) => (
+              <div className="admin-form-section" key={method.id}>
+                <h3>{method.id === "wallet" ? "Wallet" : "eZ Cash"}</h3>
+                <label className="admin-toggle-row">
+                  <input
+                    type="checkbox"
+                    checked={method.active}
+                    onChange={(event) => updateMethod(method.id, { active: event.target.checked })}
+                  />
+                  <span className="admin-toggle-copy">
+                    <strong>{method.active ? "Active" : "Paused"}</strong>
+                    <small>
+                      {method.active
+                        ? "Customers can choose this method."
+                        : "Hidden from checkout; new orders are blocked."}
+                    </small>
+                  </span>
+                </label>
+                <FormField label="Display name">
+                  <input
+                    className="admin-form-input"
+                    value={method.name}
+                    maxLength={100}
+                    onChange={(event) => updateMethod(method.id, { name: event.target.value })}
+                  />
+                </FormField>
+                <FormField label="Checkout description">
+                  <input
+                    className="admin-form-input"
+                    value={method.sub}
+                    maxLength={200}
+                    onChange={(event) => updateMethod(method.id, { sub: event.target.value })}
+                  />
+                </FormField>
+                <FormField label="Short label">
+                  <input
+                    className="admin-form-input"
+                    value={method.short}
+                    maxLength={10}
+                    onChange={(event) => updateMethod(method.id, { short: event.target.value })}
+                  />
+                </FormField>
               </div>
-              <div>
-                <p style={{ fontSize: 11, fontWeight: 700, marginBottom: 6 }}>Inventory Highlights</p>
-                <ul style={{ fontSize: 11, paddingLeft: 16, lineHeight: 1.8, color: 'var(--muted-foreground)' }}>
-                  {viewing.inventoryHighlights.map((h, i) => <li key={i}>{h}</li>)}
-                </ul>
+            ))}
+          </div>
+          <div className="admin-form-actions">
+            <Button onClick={() => void save()} disabled={saving}>
+              {saving ? "Saving…" : "Save payment methods"}
+            </Button>
+          </div>
+        </section>
+      )}
+    </AdminShell>
+  );
+}
+export function AdminUsers() {
+  return <AdminUsersPage />;
+}
+
+const DEFAULT_FAQS = { items: [] as { question: string; answer: string }[] };
+const DEFAULT_SETTINGS = {
+  storeName: "HASA GOLD STORE",
+  tagline: "",
+  supportEmail: "",
+  supportWhatsapp: "",
+  paymentEzcashNumber: "0741635465",
+  paymentEzcashName: "Nexaura Topup",
+  currency: "LKR",
+  bannerEnabled: false,
+  maintenanceMode: false,
+};
+
+function AdminSettingsPage({ mode }: { mode: "settings" | "faqs" }) {
+  const { ready, uid } = useAccount();
+  const collection = mode === "faqs" ? "faqs" : "settings";
+  const [form, setForm] = useState<AdminFormState>(createFormState(DEFAULT_SETTINGS));
+  const [faqItems, setFaqItems] = useState(DEFAULT_FAQS.items);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!ready) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const user = requireAdminSessionUser(uid);
+      const idToken = await user.getIdToken();
+      await verifyAdminAccess({ data: { idToken } });
+      const { getDoc, doc, getFirestore } = await import("firebase/firestore");
+      const { getFirebaseApp } = await import("@/lib/firebase");
+      const id = mode === "faqs" ? "faqs" : "store";
+      const snapshot = await getDoc(doc(getFirestore(getFirebaseApp()), "settings", id));
+      if (snapshot.exists()) {
+        const current = snapshot.data();
+        if (mode === "faqs") {
+          const items = current["items"];
+          setFaqItems(
+            Array.isArray(items)
+              ? items
+                  .filter(
+                    (item): item is { question: string; answer: string } =>
+                      !!item &&
+                      typeof item === "object" &&
+                      "question" in item &&
+                      typeof item["question"] === "string" &&
+                      "answer" in item &&
+                      typeof item["answer"] === "string",
+                  )
+                  .map(({ question, answer }) => ({ question, answer }))
+              : [],
+          );
+        } else {
+          setForm(createFormState({ ...DEFAULT_SETTINGS, ...current }));
+        }
+      } else {
+        if (mode === "faqs") setFaqItems([]);
+        else {
+          setForm(createFormState(DEFAULT_SETTINGS));
+        }
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Settings could not be loaded.");
+    } finally {
+      setLoading(false);
+    }
+  }, [mode, ready, uid]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function save() {
+    const record =
+      mode === "faqs"
+        ? { items: faqItems }
+        : {
+            storeName: formText(form, "storeName"),
+            tagline: formText(form, "tagline"),
+            supportEmail: formText(form, "supportEmail"),
+            supportWhatsapp: formText(form, "supportWhatsapp"),
+            paymentEzcashNumber: formText(form, "paymentEzcashNumber"),
+            paymentEzcashName: formText(form, "paymentEzcashName"),
+            currency: "LKR",
+            bannerEnabled: formBoolean(form, "bannerEnabled"),
+            maintenanceMode: formBoolean(form, "maintenanceMode"),
+          };
+    setError(null);
+    setSaving(true);
+    try {
+      const user = requireAdminSessionUser(uid);
+      await saveAdminRecord({
+        data: {
+          idToken: await user.getIdToken(),
+          collection,
+          record,
+        },
+      });
+      toast.success(mode === "faqs" ? "FAQs saved." : "Store settings saved.");
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The changes could not be saved.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function updateSetting(key: string, value: string | boolean) {
+    setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function updateFaq(index: number, key: "question" | "answer", value: string) {
+    setFaqItems((current) =>
+      current.map((item, itemIndex) => (itemIndex === index ? { ...item, [key]: value } : item)),
+    );
+  }
+
+  return (
+    <AdminShell
+      title={mode === "faqs" ? "Support FAQs" : "Store settings"}
+      description={
+        mode === "faqs"
+          ? "Manage public FAQ content stored in Firestore."
+          : "Manage the public store configuration document."
+      }
+    >
+      {error && (
+        <p className="admin-error-banner" role="alert">
+          {error}
+        </p>
+      )}
+      {loading ? (
+        <p role="status">Loading…</p>
+      ) : (
+        <section className="admin-panel admin-settings-panel">
+          <div className="admin-panel-header">
+            <div>
+              <span className="admin-panel-eyebrow">
+                {mode === "faqs" ? "PUBLIC SUPPORT CONTENT" : "STOREFRONT CONFIGURATION"}
+              </span>
+              <h2>{mode === "faqs" ? "FAQ document" : "Store profile"}</h2>
+            </div>
+            <span className="admin-settings-doc">
+              <Database size={14} /> settings/{mode === "faqs" ? "faqs" : "store"}
+            </span>
+          </div>
+          <p className="admin-helper-copy">
+            Changes are validated and written through the protected admin service.
+          </p>
+          {mode === "settings" ? (
+            <>
+              <div className="admin-form-section">
+                <h3>Manual payment details</h3>
+                <p className="admin-helper-copy">
+                  Customers see these Firestore-backed details for eZ Cash and upload proof for
+                  administrator review.
+                </p>
+                <div className="admin-form-grid">
+                  <FormField label="eZ Cash mobile number">
+                    <input
+                      className="admin-form-input"
+                      value={formText(form, "paymentEzcashNumber")}
+                      onChange={(event) => updateSetting("paymentEzcashNumber", event.target.value)}
+                      placeholder="0741635465"
+                    />
+                  </FormField>
+                  <FormField label="eZ Cash account name">
+                    <input
+                      className="admin-form-input"
+                      value={formText(form, "paymentEzcashName")}
+                      onChange={(event) => updateSetting("paymentEzcashName", event.target.value)}
+                      placeholder="Nexaura Topup"
+                    />
+                  </FormField>
+                </div>
               </div>
-              <Button asChild variant="outline" style={{ fontSize: 11 }}>
-                <Link to={`/accounts/${viewing.id}` as any}>View storefront listing <ExternalLink size={14} /></Link>
+              <div className="admin-form-section">
+                <h3>Store identity</h3>
+                <div className="admin-form-grid">
+                  <FormField label="Store name" hint="Shown in the storefront header.">
+                    <input
+                      className="admin-form-input"
+                      value={formText(form, "storeName")}
+                      onChange={(event) => updateSetting("storeName", event.target.value)}
+                      placeholder="e.g. HASA GOLD STORE"
+                    />
+                  </FormField>
+                  <FormField label="Tagline">
+                    <input
+                      className="admin-form-input"
+                      value={formText(form, "tagline")}
+                      onChange={(event) => updateSetting("tagline", event.target.value)}
+                      placeholder="e.g. Fast and trusted game top-ups"
+                    />
+                  </FormField>
+                  <FormField label="Support email">
+                    <input
+                      className="admin-form-input"
+                      type="email"
+                      value={formText(form, "supportEmail")}
+                      onChange={(event) => updateSetting("supportEmail", event.target.value)}
+                      placeholder="e.g. help@example.com"
+                    />
+                  </FormField>
+                  <FormField label="WhatsApp contact">
+                    <input
+                      className="admin-form-input"
+                      value={formText(form, "supportWhatsapp")}
+                      onChange={(event) => updateSetting("supportWhatsapp", event.target.value)}
+                      placeholder="e.g. +94 77 123 4567"
+                    />
+                  </FormField>
+                </div>
+              </div>
+              <div className="admin-toggle-grid admin-settings-toggles">
+                <label className="admin-toggle-row">
+                  <input
+                    type="checkbox"
+                    checked={formBoolean(form, "bannerEnabled")}
+                    onChange={(event) => updateSetting("bannerEnabled", event.target.checked)}
+                  />
+                  <span className="admin-toggle-copy">
+                    <strong>Show store banner</strong>
+                    <small>Display the announcement/banner area on the storefront.</small>
+                  </span>
+                </label>
+                <label className="admin-toggle-row is-warning">
+                  <input
+                    type="checkbox"
+                    checked={formBoolean(form, "maintenanceMode")}
+                    onChange={(event) => updateSetting("maintenanceMode", event.target.checked)}
+                  />
+                  <span className="admin-toggle-copy">
+                    <strong>Maintenance mode</strong>
+                    <small>Temporarily blocks new orders from being created.</small>
+                  </span>
+                </label>
+              </div>
+            </>
+          ) : (
+            <div className="admin-faq-editor">
+              {faqItems.map((item, index) => (
+                <article className="admin-faq-item" key={index}>
+                  <div className="admin-faq-item-heading">
+                    <strong>Question {index + 1}</strong>
+                    <button
+                      type="button"
+                      className="admin-faq-remove"
+                      onClick={() =>
+                        setFaqItems((current) =>
+                          current.filter((_, itemIndex) => itemIndex !== index),
+                        )
+                      }
+                      aria-label={`Remove question ${index + 1}`}
+                    >
+                      <Trash2 size={15} /> Remove
+                    </button>
+                  </div>
+                  <FormField label="Question">
+                    <input
+                      className="admin-form-input"
+                      value={item.question}
+                      onChange={(event) => updateFaq(index, "question", event.target.value)}
+                      placeholder="e.g. How long does a top-up take?"
+                    />
+                  </FormField>
+                  <FormField label="Answer">
+                    <textarea
+                      className="admin-form-input admin-form-textarea"
+                      rows={3}
+                      value={item.answer}
+                      onChange={(event) => updateFaq(index, "answer", event.target.value)}
+                      placeholder="Write a clear answer customers can understand."
+                    />
+                  </FormField>
+                </article>
+              ))}
+              <Button
+                className="admin-quiet-button"
+                variant="outline"
+                onClick={() => setFaqItems((current) => [...current, { question: "", answer: "" }])}
+                disabled={faqItems.length >= 100}
+              >
+                <Plus size={15} /> Add FAQ
               </Button>
             </div>
           )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Remove confirm dialog */}
-      <Dialog open={removing !== null} onOpenChange={open => { if (!open) setRemoving(null); }}>
-        <DialogContent>
-          <DialogTitle>Remove listing?</DialogTitle>
-          <DialogDescription>This removes the account from your admin workspace. The storefront is not affected.</DialogDescription>
-          <Button variant="destructive" onClick={() => { if (removing) { removeAccount(removing); toast.success('Listing removed from workspace'); } setRemoving(null); }}><Trash2 />Remove listing</Button>
-        </DialogContent>
-      </Dialog>
-    </>
-  );
-}
-
-// ─── ORDERS ──────────────────────────────────────────────────────
-export function AdminOrders() {
-  const { orders, updateOrderStatus } = useAdmin();
-  const [query, setQuery] = useState('');
-  const [typeFilter, setTypeFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all');
-
-  const items = orders.filter(o => {
-    const matchQ = `${o.id} ${o.customerName} ${o.item}`.toLowerCase().includes(query.toLowerCase());
-    const matchT = typeFilter === 'all' || o.type === typeFilter;
-    const matchS = statusFilter === 'all' || o.status === statusFilter;
-    return matchQ && matchT && matchS;
-  });
-
-  const totalRevenue = orders.filter(o => o.status === 'Completed').reduce((sum, o) => {
-    const val = parseFloat(o.amount.replace(/[^0-9.]/g, ''));
-    return sum + (isNaN(val) ? 0 : val);
-  }, 0);
-
-  return (
-    <>
-      <AdminHeading title="Orders" description="Sample order history — demonstrates top-up and account purchase management." />
-
-      {/* Summary stats */}
-      <div className="admin-metrics" style={{ gridTemplateColumns: 'repeat(4,minmax(0,1fr))', marginBottom: 24 }}>
-        {[
-          { label: 'Total Orders',      value: orders.length,                                    icon: Receipt,       detail: 'All time sample' },
-          { label: 'Completed',         value: orders.filter(o => o.status === 'Completed').length, icon: CheckCircle2, detail: 'Successfully delivered' },
-          { label: 'Processing',        value: orders.filter(o => o.status === 'Processing' || o.status === 'Pending').length, icon: Clock, detail: 'Awaiting action' },
-          { label: 'Sample Revenue',    value: `$${totalRevenue.toFixed(2)}`,                    icon: DollarSign,    detail: 'Completed orders only' },
-        ].map(item => (
-          <article key={item.label} className="admin-metric">
-            <span className="admin-metric-icon"><item.icon /></span>
-            <p>{item.label}</p>
-            <strong>{item.value}</strong>
-            <small>{item.detail}</small>
-          </article>
-        ))}
-      </div>
-
-      {/* Toolbar */}
-      <div className="admin-toolbar" style={{ flexWrap: 'wrap', gap: 10 }}>
-        <div className="search-field"><Search size={18} /><input aria-label="Search orders" placeholder="Search order ID, customer, item…" value={query} onChange={e => setQuery(e.target.value)} /></div>
-        <select aria-label="Filter by type" value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
-          <option value="all">All types</option>
-          <option value="topup">Top-up</option>
-          <option value="account">Account sale</option>
-        </select>
-        <select aria-label="Filter by status" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-          <option value="all">All statuses</option>
-          <option value="Completed">Completed</option>
-          <option value="Processing">Processing</option>
-          <option value="Pending">Pending</option>
-          <option value="Refunded">Refunded</option>
-        </select>
-        <span style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>{items.length} order{items.length !== 1 ? 's' : ''}</span>
-      </div>
-
-      {items.length ? (
-        <div className="admin-table-container">
-          <table className="admin-data-table">
-            <thead>
-              <tr>
-                <th>Order ID</th>
-                <th>Type</th>
-                <th>Customer</th>
-                <th>Item</th>
-                <th>Amount</th>
-                <th>Payment</th>
-                <th>Player ID / Note</th>
-                <th>Status</th>
-                <th>Date</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map(o => (
-                <tr key={o.id}>
-                  <td><span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 11 }}>{o.id}</span></td>
-                  <td><span className={`admin-pill ${o.type === 'topup' ? 'pill-info' : 'pill-warning'}`} style={{ fontSize: 9 }}>{o.type === 'topup' ? 'Top-up' : 'Account'}</span></td>
-                  <td>
-                    <div style={{ fontSize: 12, fontWeight: 600 }}>{o.customerName}</div>
-                    <div style={{ fontSize: 10, color: 'var(--muted-foreground)' }}>{o.customerContact}</div>
-                  </td>
-                  <td style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }}>{o.item}</td>
-                  <td><strong style={{ fontSize: 13 }}>{o.amount}</strong></td>
-                  <td style={{ fontSize: 11 }}>{o.paymentMethod}</td>
-                  <td style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>{o.playerId || '—'}</td>
-                  <td><PillBadge status={o.status} /></td>
-                  <td style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>{o.date}</td>
-                  <td>
-                    <select
-                      aria-label={`Change status for ${o.id}`}
-                      value={o.status}
-                      onChange={e => { updateOrderStatus(o.id, e.target.value as any); toast.success(`Order ${o.id} → ${e.target.value}`); }}
-                      style={{ fontSize: 10, borderRadius: 5, border: '1px solid var(--border)', padding: '4px 6px', background: 'var(--muted)', color: 'var(--foreground)' }}
-                    >
-                      <option value="Completed">Completed</option>
-                      <option value="Processing">Processing</option>
-                      <option value="Pending">Pending</option>
-                      <option value="Refunded">Refunded</option>
-                    </select>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <Empty icon={Receipt} title="No matching orders" description="Try a different search or filter." />
-      )}
-
-      <div className="admin-order-note">
-        <ShieldCheck />
-        <p>Sample order data only. Real order management and delivery tracking require a connected backend.</p>
-      </div>
-    </>
-  );
-}
-
-// ─── SUPPORT & FAQs ──────────────────────────────────────────────
-export function AdminSupport() {
-  const { answers, setAnswers, record, tickets, updateTicketStatus, replyTicket } = useAdmin();
-  const [tab, setTab] = useState<'tickets' | 'faqs'>('tickets');
-  const [query, setQuery] = useState('');
-  const [ticketStatusFilter, setTicketStatusFilter] = useState('all');
-  const [editing, setEditing] = useState<number | 'new' | null>(null);
-  const [remove, setRemove] = useState<number | null>(null);
-  const [error, setError] = useState('');
-  const [viewTicket, setViewTicket] = useState<AdminTicket | null>(null);
-  const [replyText, setReplyText] = useState('');
-
-  const filteredFaqs = answers.filter(f =>
-    `${f.question} ${f.answer}`.toLowerCase().includes(query.toLowerCase())
-  );
-
-  const filteredTickets = tickets.filter(t => {
-    const matchQ = `${t.id} ${t.customerName} ${t.subject}`.toLowerCase().includes(query.toLowerCase());
-    const matchS = ticketStatusFilter === 'all' || t.status === ticketStatusFilter;
-    return matchQ && matchS;
-  });
-
-  function priorityClass(p: string) {
-    return p === 'High' ? 'pill-danger' : p === 'Normal' ? 'pill-info' : 'pill-muted';
-  }
-
-  return (
-    <>
-      <AdminHeading title="Support & FAQs" description="Manage support ticket queue and FAQ draft content.">
-        {tab === 'faqs' && <Button onClick={() => { setEditing('new'); setError(''); }}><Plus />Add FAQ</Button>}
-      </AdminHeading>
-
-      {/* Tabs */}
-      <div className="admin-tabs">
-        <button className={`admin-tab ${tab === 'tickets' ? 'is-active' : ''}`} onClick={() => setTab('tickets')}>
-          <MessageSquare />Tickets <span style={{ fontSize: 10, background: 'var(--muted)', padding: '2px 6px', borderRadius: 10, marginLeft: 4 }}>{tickets.filter(t => t.status !== 'Resolved').length}</span>
-        </button>
-        <button className={`admin-tab ${tab === 'faqs' ? 'is-active' : ''}`} onClick={() => setTab('faqs')}>
-          <HelpCircle />FAQ Library <span style={{ fontSize: 10, background: 'var(--muted)', padding: '2px 6px', borderRadius: 10, marginLeft: 4 }}>{answers.length}</span>
-        </button>
-      </div>
-
-      {tab === 'tickets' && (
-        <>
-          <div className="admin-toolbar" style={{ flexWrap: 'wrap', gap: 10 }}>
-            <div className="search-field"><Search size={18} /><input aria-label="Search tickets" placeholder="Search ticket ID, customer, subject…" value={query} onChange={e => setQuery(e.target.value)} /></div>
-            <select aria-label="Filter ticket status" value={ticketStatusFilter} onChange={e => setTicketStatusFilter(e.target.value)}>
-              <option value="all">All statuses</option>
-              <option value="Open">Open</option>
-              <option value="In Progress">In Progress</option>
-              <option value="Resolved">Resolved</option>
-            </select>
-          </div>
-          {filteredTickets.length ? (
-            <div className="admin-table-container">
-              <table className="admin-data-table">
-                <thead><tr>
-                  <th>Ticket ID</th><th>Customer</th><th>Subject</th><th>Category</th><th>Priority</th><th>Status</th><th>Date</th><th>Actions</th>
-                </tr></thead>
-                <tbody>
-                  {filteredTickets.map(t => (
-                    <tr key={t.id}>
-                      <td><span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 11 }}>{t.id}</span></td>
-                      <td>
-                        <div style={{ fontSize: 12, fontWeight: 600 }}>{t.customerName}</div>
-                        <div style={{ fontSize: 10, color: 'var(--muted-foreground)' }}>{t.customerEmail}</div>
-                      </td>
-                      <td style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }}>{t.subject}</td>
-                      <td style={{ fontSize: 11 }}>{t.category}</td>
-                      <td><span className={`admin-pill ${priorityClass(t.priority)}`}>{t.priority}</span></td>
-                      <td><PillBadge status={t.status} /></td>
-                      <td style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>{t.date}</td>
-                      <td>
-                        <div style={{ display: 'flex', gap: 4 }}>
-                          <Button variant="ghost" size="icon" aria-label={`View ticket ${t.id}`} title="View & reply" onClick={() => { setViewTicket(t); setReplyText(''); }}><MessageSquare /></Button>
-                          {t.status !== 'Resolved' && (
-                            <Button variant="ghost" size="icon" aria-label={`Resolve ticket ${t.id}`} title="Mark resolved" onClick={() => { updateTicketStatus(t.id, 'Resolved'); toast.success(`Ticket ${t.id} resolved`); }}><Check /></Button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <Empty icon={MessageSquare} title="No matching tickets" description="Try a different search or status filter." />
-          )}
-        </>
-      )}
-
-      {tab === 'faqs' && (
-        <>
-          <div className="search-field"><Search size={18} /><input aria-label="Search FAQs" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search questions and answers…" /></div>
-          <div className="admin-faq-list">
-            {filteredFaqs.map((faq, index) => (
-              <article key={index}>
-                <div><span className="admin-badge">Sample draft</span><h2>{faq.question}</h2><p>{faq.answer}</p></div>
-                <div className="admin-faq-actions">
-                  <Button variant="ghost" size="icon" aria-label={`Edit FAQ ${index + 1}`} onClick={() => { setEditing(index); setError(''); }}><Pencil /></Button>
-                  <Button variant="ghost" size="icon" aria-label={`Delete FAQ ${index + 1}`} onClick={() => setRemove(index)}><Trash2 /></Button>
-                </div>
-              </article>
-            ))}
-          </div>
-          {!filteredFaqs.length && <Empty icon={HelpCircle} title="No matching FAQs" description="Try another search or add a draft answer." />}
-        </>
-      )}
-
-      {/* View/Reply Ticket Dialog */}
-      <Dialog open={Boolean(viewTicket)} onOpenChange={open => { if (!open) setViewTicket(null); }}>
-        <DialogContent>
-          <DialogTitle>{viewTicket?.id} — {viewTicket?.subject}</DialogTitle>
-          <DialogDescription>{viewTicket?.category} · Priority: {viewTicket?.priority} · {viewTicket?.date}</DialogDescription>
-          <div className="admin-chat-thread">
-            {viewTicket?.messages.map((m, i) => (
-              <div key={i} className={`admin-msg-bubble ${m.sender === 'Admin Support' ? 'msg-admin' : 'msg-customer'}`}>
-                <div className="admin-msg-sender">{m.sender}</div>
-                {m.text}
-                <div style={{ fontSize: 9, opacity: .7, marginTop: 4 }}>{m.time}</div>
-              </div>
-            ))}
-          </div>
-          {viewTicket?.status !== 'Resolved' && (
-            <form onSubmit={e => {
-              e.preventDefault();
-              if (!viewTicket || !replyText.trim()) return;
-              replyTicket(viewTicket.id, replyText.trim());
-              setViewTicket(prev => prev ? { ...prev, status: 'In Progress', messages: [...prev.messages, { sender: 'Admin Support', text: replyText.trim(), time: 'Just now' }] } : null);
-              setReplyText('');
-              toast.success('Reply sent');
-            }} style={{ display: 'flex', gap: 8 }}>
-              <textarea value={replyText} onChange={e => setReplyText(e.target.value)} placeholder="Type your reply…" rows={2} style={{ flex: 1, fontSize: 12, borderRadius: 6, border: '1px solid var(--border)', padding: '8px 10px', background: 'var(--muted)', color: 'var(--foreground)', resize: 'vertical' }} />
-              <Button type="submit" size="icon" disabled={!replyText.trim()} aria-label="Send reply"><Send /></Button>
-            </form>
-          )}
-          <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-            {viewTicket?.status !== 'Resolved' && (
-              <Button variant="outline" style={{ fontSize: 11 }} onClick={() => { if (viewTicket) { updateTicketStatus(viewTicket.id, 'Resolved'); setViewTicket(prev => prev ? { ...prev, status: 'Resolved' } : null); toast.success('Ticket resolved'); } }}><Check />Mark Resolved</Button>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* FAQ Edit Dialog */}
-      <Dialog open={editing !== null} onOpenChange={open => { if (!open) setEditing(null); }}>
-        <DialogContent>
-          <DialogTitle>{editing === 'new' ? 'Add' : 'Edit'} FAQ draft</DialogTitle>
-          <DialogDescription>Sample content only.</DialogDescription>
-          <form className="account-form" onSubmit={e => {
-            e.preventDefault();
-            const data = new FormData(e.currentTarget);
-            const result = z.object({ question: z.string().trim().min(1).max(200), answer: z.string().trim().min(1).max(2000) }).safeParse({ question: data.get('question'), answer: data.get('answer') });
-            if (!result.success) { setError('Enter a question (up to 200 chars) and answer (up to 2,000).'); return; }
-            setAnswers(editing === 'new' ? [...answers, result.data] : answers.map((f, i) => i === editing ? result.data : f));
-            record('Sample FAQ draft saved'); setEditing(null); toast.success('FAQ draft saved');
-          }}>
-            <label className="form-field">Question<input name="question" maxLength={200} defaultValue={typeof editing === 'number' ? answers[editing]?.question : ''} /></label>
-            <label className="form-field">Answer<textarea name="answer" maxLength={2000} rows={5} defaultValue={typeof editing === 'number' ? answers[editing]?.answer : ''} /></label>
-            {error && <p className="field-error" role="alert">{error}</p>}
-            <Button type="submit"><Save />Save FAQ</Button>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* FAQ Delete Dialog */}
-      <Dialog open={remove !== null} onOpenChange={open => { if (!open) setRemove(null); }}>
-        <DialogContent>
-          <DialogTitle>Delete FAQ draft?</DialogTitle>
-          <DialogDescription>This does not change the storefront support page.</DialogDescription>
-          <Button variant="destructive" onClick={() => { setAnswers(answers.filter((_, i) => i !== remove)); record('FAQ draft deleted'); setRemove(null); toast.success('FAQ draft deleted'); }}><Trash2 />Delete FAQ</Button>
-        </DialogContent>
-      </Dialog>
-    </>
-  );
-}
-
-// ─── SETTINGS ────────────────────────────────────────────────────
-export function AdminSettings() {
-  const { theme, setTheme } = useDemoAccount();
-  const { catalog, answers, reset, settings, updateStoreSettings, policies, services, updateServiceStatus, incidents, addIncident, resolveIncident, record } = useAdmin();
-  const [confirm, setConfirm] = useState(false);
-  const [tab, setTab] = useState<'store' | 'services' | 'policies' | 'workspace'>('store');
-  const [incidentTitle, setIncidentTitle] = useState('');
-  const [incidentNote, setIncidentNote] = useState('');
-  const [incidentImpact, setIncidentImpact] = useState<'Minor' | 'Major'>('Minor');
-  const [reportOpen, setReportOpen] = useState(false);
-
-  function serviceStatusIcon(status: AdminService['status']) {
-    if (status === 'operational') return <CheckCircle2 size={16} style={{ color: 'oklch(.55 .15 145)' }} />;
-    if (status === 'degraded') return <AlertTriangle size={16} style={{ color: 'oklch(.65 .16 80)' }} />;
-    if (status === 'maintenance') return <RefreshCw size={16} style={{ color: 'var(--primary)' }} />;
-    return <AlertTriangle size={16} style={{ color: 'oklch(.55 .2 25)' }} />;
-  }
-
-  return (
-    <>
-      <AdminHeading title="Workspace settings" description="Store info, services monitor, policy metadata, appearance, and workspace reset." />
-
-      {/* Tabs */}
-      <div className="admin-tabs">
-        <button className={`admin-tab ${tab === 'store' ? 'is-active' : ''}`} onClick={() => setTab('store')}><SlidersHorizontal />Store Info</button>
-        <button className={`admin-tab ${tab === 'services' ? 'is-active' : ''}`} onClick={() => setTab('services')}><Server />Services & Incidents</button>
-        <button className={`admin-tab ${tab === 'policies' ? 'is-active' : ''}`} onClick={() => setTab('policies')}><FileText />Policy Metadata</button>
-        <button className={`admin-tab ${tab === 'workspace' ? 'is-active' : ''}`} onClick={() => setTab('workspace')}><Settings2 />Appearance & Reset</button>
-      </div>
-
-      {/* ── Store Info ── */}
-      {tab === 'store' && (
-        <section className="admin-section" style={{ borderTop: 'none', paddingTop: 0, marginTop: 0 }}>
-          <p className="form-hint" style={{ marginBottom: 18 }}>Sample store configuration. No changes are pushed to any live system.</p>
-          <form className="account-form" onSubmit={e => {
-            e.preventDefault();
-            const data = new FormData(e.currentTarget);
-            updateStoreSettings({
-              storeName:       (data.get('storeName') as string).trim(),
-              tagline:         (data.get('tagline') as string).trim(),
-              supportEmail:    (data.get('supportEmail') as string).trim(),
-              supportWhatsapp: (data.get('supportWhatsapp') as string).trim(),
-              currency:        (data.get('currency') as string).trim(),
-              bannerText:      (data.get('bannerText') as string).trim(),
-            });
-            toast.success('Store settings saved (demo workspace)');
-          }}>
-            <div className="admin-form-row">
-              <label className="form-field">Store Name<input name="storeName" defaultValue={settings.storeName} maxLength={60} /></label>
-              <label className="form-field">Tagline<input name="tagline" defaultValue={settings.tagline} maxLength={100} /></label>
-            </div>
-            <div className="admin-form-row">
-              <label className="form-field">Support Email<input name="supportEmail" type="email" defaultValue={settings.supportEmail} /></label>
-              <label className="form-field">WhatsApp Number<input name="supportWhatsapp" defaultValue={settings.supportWhatsapp} /></label>
-            </div>
-            <div className="admin-form-row">
-              <label className="form-field">Display Currency<input name="currency" defaultValue={settings.currency} maxLength={20} /></label>
-            </div>
-            <label className="form-field">Announcement Banner Text<input name="bannerText" defaultValue={settings.bannerText} maxLength={200} /></label>
-            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 6 }}>
-              <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, cursor: 'pointer' }}>
-                <input type="checkbox" checked={settings.instantEscrowEnabled} onChange={e => updateStoreSettings({ instantEscrowEnabled: e.target.checked })} /> Instant Escrow Enabled
-              </label>
-              <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, cursor: 'pointer' }}>
-                <input type="checkbox" checked={settings.bannerEnabled} onChange={e => updateStoreSettings({ bannerEnabled: e.target.checked })} /> Show Announcement Banner
-              </label>
-              <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, cursor: 'pointer' }}>
-                <input type="checkbox" checked={settings.maintenanceMode} onChange={e => { updateStoreSettings({ maintenanceMode: e.target.checked }); toast.info(e.target.checked ? 'Maintenance mode ON (demo)' : 'Maintenance mode OFF (demo)'); }} /> Maintenance Mode
-              </label>
-            </div>
-            <Button type="submit" style={{ marginTop: 8 }}><Save />Save store settings</Button>
-          </form>
-          <div style={{ marginTop: 24, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <Button asChild variant="outline" style={{ fontSize: 11 }}><Link to="/"><ExternalLink size={14} />View Storefront</Link></Button>
-            <Button asChild variant="outline" style={{ fontSize: 11 }}><Link to="/status"><Radio size={14} />Service Status Page</Link></Button>
-            <Button asChild variant="outline" style={{ fontSize: 11 }}><Link to="/privacy-policy"><FileText size={14} />Privacy Policy</Link></Button>
-            <Button asChild variant="outline" style={{ fontSize: 11 }}><Link to="/refund-policy"><FileText size={14} />Refund Policy</Link></Button>
+          <div className="admin-editor-actions">
+            <Button className="admin-primary-button" onClick={() => void save()} disabled={saving}>
+              {saving ? "Saving…" : "Save changes"}
+            </Button>
+            <Button
+              className="admin-quiet-button"
+              variant="outline"
+              onClick={() => void load()}
+              disabled={saving}
+            >
+              <RefreshCw size={14} /> Reload document
+            </Button>
           </div>
         </section>
       )}
-
-      {/* ── Services & Incidents ── */}
-      {tab === 'services' && (
-        <section className="admin-section" style={{ borderTop: 'none', paddingTop: 0, marginTop: 0 }}>
-          <div className="admin-section-heading">
-            <h2>Service monitors <span style={{ fontSize: 11, color: 'var(--muted-foreground)', fontWeight: 400 }}>({services.filter(s => s.status === 'operational').length}/{services.length} operational)</span></h2>
-            <Button onClick={() => setReportOpen(true)}><Plus />Report incident</Button>
-          </div>
-          <div>
-            {services.map(s => (
-              <div key={s.id} className="admin-svc-card">
-                <div className="admin-svc-info">
-                  {serviceStatusIcon(s.status)}
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 600 }}>{s.name}</div>
-                    <div style={{ fontSize: 10, color: 'var(--muted-foreground)' }}>{s.category} · {s.uptime} uptime · {s.latency}ms avg</div>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <PillBadge status={s.status} />
-                  <select
-                    aria-label={`Change status for ${s.name}`}
-                    value={s.status}
-                    onChange={e => { updateServiceStatus(s.id, e.target.value as any); toast.success(`${s.name} → ${e.target.value}`); }}
-                    style={{ fontSize: 10, borderRadius: 5, border: '1px solid var(--border)', padding: '4px 6px', background: 'var(--muted)', color: 'var(--foreground)' }}
-                  >
-                    <option value="operational">Operational</option>
-                    <option value="degraded">Degraded</option>
-                    <option value="maintenance">Maintenance</option>
-                    <option value="outage">Outage</option>
-                  </select>
-                </div>
-              </div>
-            ))}
-          </div>
-          {incidents.length > 0 && (
-            <>
-              <div className="admin-section-heading" style={{ marginTop: 24 }}>
-                <h2>Incident history</h2>
-              </div>
-              <div className="admin-table-container">
-                <table className="admin-data-table">
-                  <thead><tr><th>ID</th><th>Title</th><th>Impact</th><th>Status</th><th>Date</th><th>Action</th></tr></thead>
-                  <tbody>
-                    {incidents.map(inc => (
-                      <tr key={inc.id}>
-                        <td><span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 11 }}>{inc.id}</span></td>
-                        <td style={{ fontSize: 12 }}>{inc.title}</td>
-                        <td><PillBadge status={inc.impact === 'Major' ? 'outage' : inc.impact === 'Minor' ? 'degraded' : 'Available'} /></td>
-                        <td><PillBadge status={inc.status === 'Resolved' ? 'Resolved' : 'Processing'} /></td>
-                        <td style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>{inc.date}</td>
-                        <td>
-                          {inc.status !== 'Resolved' && (
-                            <Button variant="outline" style={{ fontSize: 10, height: 28 }} onClick={() => { resolveIncident(inc.id, 'Resolved by admin.'); toast.success('Incident resolved'); }}><Check />Resolve</Button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-
-          {/* Report Incident Dialog */}
-          <Dialog open={reportOpen} onOpenChange={open => { if (!open) { setReportOpen(false); setIncidentTitle(''); setIncidentNote(''); } }}>
-            <DialogContent>
-              <DialogTitle>Report New Incident</DialogTitle>
-              <DialogDescription>This creates a sample incident record in your admin workspace.</DialogDescription>
-              <form className="account-form" onSubmit={e => {
-                e.preventDefault();
-                if (!incidentTitle.trim()) return;
-                addIncident(incidentTitle.trim(), incidentImpact, incidentNote.trim() || 'Investigating issue.');
-                setReportOpen(false); setIncidentTitle(''); setIncidentNote('');
-                toast.success('Incident reported (sample workspace)');
-              }}>
-                <label className="form-field">Incident title<input value={incidentTitle} onChange={e => setIncidentTitle(e.target.value)} maxLength={100} placeholder="E.g. Elevated delivery latency on Free Fire" /></label>
-                <label className="form-field">Impact level
-                  <select value={incidentImpact} onChange={e => setIncidentImpact(e.target.value as any)} style={{ marginTop: 6, width: '100%', padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, background: 'var(--muted)', color: 'var(--foreground)', fontSize: 13 }}>
-                    <option value="Minor">Minor</option>
-                    <option value="Major">Major</option>
-                  </select>
-                </label>
-                <label className="form-field">Initial update<textarea value={incidentNote} onChange={e => setIncidentNote(e.target.value)} rows={3} placeholder="Describe what is being investigated…" /></label>
-                <Button type="submit"><AlertTriangle />Report incident</Button>
-              </form>
-            </DialogContent>
-          </Dialog>
-        </section>
-      )}
-
-      {/* ── Policy Metadata ── */}
-      {tab === 'policies' && (
-        <section className="admin-section" style={{ borderTop: 'none', paddingTop: 0, marginTop: 0 }}>
-          <p className="form-hint" style={{ marginBottom: 18 }}>Policy versioning and dates for reference only. Actual policy content is in the route files.</p>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-            {[
-              { label: 'Privacy Policy Version',    value: 'v2.4' },
-              { label: 'Privacy Last Updated',       value: 'October 2026' },
-              { label: 'Privacy Effective Date',     value: 'October 15, 2026' },
-              { label: 'Refund Policy Version',      value: 'v1.9' },
-              { label: 'Refund Last Updated',        value: 'October 2026' },
-              { label: 'Refund Guarantee Window',    value: '24 Hours Full Money-Back' },
-            ].map(item => (
-              <div key={item.label} style={{ background: 'var(--muted)', borderRadius: 8, padding: '12px 14px', border: '1px solid var(--border)' }}>
-                <div style={{ fontSize: 10, color: 'var(--muted-foreground)', marginBottom: 4, textTransform: 'uppercase', fontWeight: 700 }}>{item.label}</div>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>{item.value}</div>
-              </div>
-            ))}
-          </div>
-          <div style={{ display: 'flex', gap: 10, marginTop: 20, flexWrap: 'wrap' }}>
-            <Button asChild variant="outline" style={{ fontSize: 11 }}><Link to="/privacy-policy"><FileText size={14} />View Privacy Policy</Link></Button>
-            <Button asChild variant="outline" style={{ fontSize: 11 }}><Link to="/refund-policy"><FileText size={14} />View Refund Policy</Link></Button>
-          </div>
-        </section>
-      )}
-
-      {/* ── Appearance & Reset ── */}
-      {tab === 'workspace' && (
-        <>
-          <section className="admin-section" style={{ borderTop: 'none', paddingTop: 0, marginTop: 0 }}>
-            <h2>Appearance</h2>
-            <p className="form-hint">Shared with the storefront. System follows your device preference.</p>
-            <div className="theme-segment" role="group" aria-label="Admin theme">
-              {(['light', 'dark', 'system'] as const).map(value => (
-                <Button key={value} variant={theme === value ? 'default' : 'ghost'} aria-pressed={theme === value} onClick={() => setTheme(value)}>{value.charAt(0).toUpperCase() + value.slice(1)}</Button>
-              ))}
-            </div>
-          </section>
-          <section className="admin-section">
-            <h2>Sample catalog export</h2>
-            <p className="form-hint">Download game and FAQ drafts only. Local profiles and Player IDs are excluded.</p>
-            <Button variant="outline" onClick={() => {
-              const blob = new Blob([JSON.stringify({ label: 'Sample', games: catalog.map(({ image, ...g }) => g), faqs: answers }, null, 2)], { type: 'application/json' });
-              const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'hasa-sample-catalog.json'; a.click(); URL.revokeObjectURL(url);
-              toast.success('Sample draft exported');
-            }}><Download />Export sample drafts</Button>
-          </section>
-          <section className="admin-section">
-            <h2>Reset workspace</h2>
-            <p className="form-hint">Restore all game, package, FAQ, account, order, and service drafts. Your theme is kept.</p>
-            <Button variant="outline" onClick={() => setConfirm(true)}><RotateCcw />Reset sample drafts</Button>
-          </section>
-          <Dialog open={confirm} onOpenChange={setConfirm}>
-            <DialogContent>
-              <DialogTitle>Reset sample drafts?</DialogTitle>
-              <DialogDescription>Discard all workspace edits made during this visit and restore to default sample data.</DialogDescription>
-              <Button variant="destructive" onClick={() => { reset(); setConfirm(false); toast.success('Sample workspace reset'); }}>Reset drafts</Button>
-            </DialogContent>
-          </Dialog>
-        </>
-      )}
-    </>
+    </AdminShell>
   );
 }

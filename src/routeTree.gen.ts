@@ -12,7 +12,9 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AccountsRouteImport } from './routes/accounts'
 import { Route as AdminRouteImport } from './routes/admin'
+import { Route as AdminLoginRouteImport } from './routes/admin-login'
 import { Route as CheckoutRouteImport } from './routes/checkout'
+import { Route as CompleteProfileRouteImport } from './routes/complete-profile'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as FavoritesRouteImport } from './routes/favorites'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
@@ -29,11 +31,15 @@ import { Route as AccountsIndexRouteImport } from './routes/accounts.index'
 import { Route as AccountsAccountRouteImport } from './routes/accounts.$account'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AdminAccountsRouteImport } from './routes/admin.accounts'
+import { Route as AdminDepositsRouteImport } from './routes/admin.deposits'
 import { Route as AdminGamesRouteImport } from './routes/admin.games'
 import { Route as AdminOrdersRouteImport } from './routes/admin.orders'
 import { Route as AdminPackagesRouteImport } from './routes/admin.packages'
+import { Route as AdminPaymentMethodsRouteImport } from './routes/admin.payment-methods'
 import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
 import { Route as AdminSupportRouteImport } from './routes/admin.support'
+import { Route as AdminTopupFailuresRouteImport } from './routes/admin.topup-failures'
+import { Route as AdminUsersRouteImport } from './routes/admin.users'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard.index'
 import { Route as DashboardFavoritesRouteImport } from './routes/dashboard.favorites'
 import { Route as DashboardOrdersRouteImport } from './routes/dashboard.orders'
@@ -59,9 +65,19 @@ const AdminRoute = AdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminLoginRoute = AdminLoginRouteImport.update({
+  id: '/admin-login',
+  path: '/admin-login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CheckoutRoute = CheckoutRouteImport.update({
   id: '/checkout',
   path: '/checkout',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CompleteProfileRoute = CompleteProfileRouteImport.update({
+  id: '/complete-profile',
+  path: '/complete-profile',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DashboardRoute = DashboardRouteImport.update({
@@ -144,6 +160,11 @@ const AdminAccountsRoute = AdminAccountsRouteImport.update({
   path: '/accounts',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminDepositsRoute = AdminDepositsRouteImport.update({
+  id: '/deposits',
+  path: '/deposits',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminGamesRoute = AdminGamesRouteImport.update({
   id: '/games',
   path: '/games',
@@ -159,6 +180,11 @@ const AdminPackagesRoute = AdminPackagesRouteImport.update({
   path: '/packages',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminPaymentMethodsRoute = AdminPaymentMethodsRouteImport.update({
+  id: '/payment-methods',
+  path: '/payment-methods',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminSettingsRoute = AdminSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -167,6 +193,16 @@ const AdminSettingsRoute = AdminSettingsRouteImport.update({
 const AdminSupportRoute = AdminSupportRouteImport.update({
   id: '/support',
   path: '/support',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminTopupFailuresRoute = AdminTopupFailuresRouteImport.update({
+  id: '/topup-failures',
+  path: '/topup-failures',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminUsersRoute = AdminUsersRouteImport.update({
+  id: '/users',
+  path: '/users',
   getParentRoute: () => AdminRoute,
 } as any)
 const DashboardIndexRoute = DashboardIndexRouteImport.update({
@@ -219,7 +255,9 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/accounts': typeof AccountsRouteWithChildren
   '/admin': typeof AdminRouteWithChildren
+  '/admin-login': typeof AdminLoginRoute
   '/checkout': typeof CheckoutRoute
+  '/complete-profile': typeof CompleteProfileRoute
   '/dashboard': typeof DashboardRouteWithChildren
   '/favorites': typeof FavoritesRoute
   '/forgot-password': typeof ForgotPasswordRoute
@@ -234,11 +272,15 @@ export interface FileRoutesByFullPath {
   '/support': typeof SupportRoute
   '/accounts/$account': typeof AccountsAccountRoute
   '/admin/accounts': typeof AdminAccountsRoute
+  '/admin/deposits': typeof AdminDepositsRoute
   '/admin/games': typeof AdminGamesRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/packages': typeof AdminPackagesRoute
+  '/admin/payment-methods': typeof AdminPaymentMethodsRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/support': typeof AdminSupportRoute
+  '/admin/topup-failures': typeof AdminTopupFailuresRoute
+  '/admin/users': typeof AdminUsersRoute
   '/dashboard/favorites': typeof DashboardFavoritesRoute
   '/dashboard/orders': typeof DashboardOrdersRoute
   '/dashboard/players': typeof DashboardPlayersRoute
@@ -253,7 +295,9 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/admin-login': typeof AdminLoginRoute
   '/checkout': typeof CheckoutRoute
+  '/complete-profile': typeof CompleteProfileRoute
   '/favorites': typeof FavoritesRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/how-it-works': typeof HowItWorksRoute
@@ -266,11 +310,15 @@ export interface FileRoutesByTo {
   '/support': typeof SupportRoute
   '/accounts/$account': typeof AccountsAccountRoute
   '/admin/accounts': typeof AdminAccountsRoute
+  '/admin/deposits': typeof AdminDepositsRoute
   '/admin/games': typeof AdminGamesRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/packages': typeof AdminPackagesRoute
+  '/admin/payment-methods': typeof AdminPaymentMethodsRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/support': typeof AdminSupportRoute
+  '/admin/topup-failures': typeof AdminTopupFailuresRoute
+  '/admin/users': typeof AdminUsersRoute
   '/dashboard/favorites': typeof DashboardFavoritesRoute
   '/dashboard/orders': typeof DashboardOrdersRoute
   '/dashboard/players': typeof DashboardPlayersRoute
@@ -288,7 +336,9 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/accounts': typeof AccountsRouteWithChildren
   '/admin': typeof AdminRouteWithChildren
+  '/admin-login': typeof AdminLoginRoute
   '/checkout': typeof CheckoutRoute
+  '/complete-profile': typeof CompleteProfileRoute
   '/dashboard': typeof DashboardRouteWithChildren
   '/favorites': typeof FavoritesRoute
   '/forgot-password': typeof ForgotPasswordRoute
@@ -303,11 +353,15 @@ export interface FileRoutesById {
   '/support': typeof SupportRoute
   '/accounts/$account': typeof AccountsAccountRoute
   '/admin/accounts': typeof AdminAccountsRoute
+  '/admin/deposits': typeof AdminDepositsRoute
   '/admin/games': typeof AdminGamesRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/packages': typeof AdminPackagesRoute
+  '/admin/payment-methods': typeof AdminPaymentMethodsRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/support': typeof AdminSupportRoute
+  '/admin/topup-failures': typeof AdminTopupFailuresRoute
+  '/admin/users': typeof AdminUsersRoute
   '/dashboard/favorites': typeof DashboardFavoritesRoute
   '/dashboard/orders': typeof DashboardOrdersRoute
   '/dashboard/players': typeof DashboardPlayersRoute
@@ -326,7 +380,9 @@ export interface FileRouteTypes {
     | '/'
     | '/accounts'
     | '/admin'
+    | '/admin-login'
     | '/checkout'
+    | '/complete-profile'
     | '/dashboard'
     | '/favorites'
     | '/forgot-password'
@@ -341,11 +397,15 @@ export interface FileRouteTypes {
     | '/support'
     | '/accounts/$account'
     | '/admin/accounts'
+    | '/admin/deposits'
     | '/admin/games'
     | '/admin/orders'
     | '/admin/packages'
+    | '/admin/payment-methods'
     | '/admin/settings'
     | '/admin/support'
+    | '/admin/topup-failures'
+    | '/admin/users'
     | '/dashboard/favorites'
     | '/dashboard/orders'
     | '/dashboard/players'
@@ -360,7 +420,9 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/admin-login'
     | '/checkout'
+    | '/complete-profile'
     | '/favorites'
     | '/forgot-password'
     | '/how-it-works'
@@ -373,11 +435,15 @@ export interface FileRouteTypes {
     | '/support'
     | '/accounts/$account'
     | '/admin/accounts'
+    | '/admin/deposits'
     | '/admin/games'
     | '/admin/orders'
     | '/admin/packages'
+    | '/admin/payment-methods'
     | '/admin/settings'
     | '/admin/support'
+    | '/admin/topup-failures'
+    | '/admin/users'
     | '/dashboard/favorites'
     | '/dashboard/orders'
     | '/dashboard/players'
@@ -394,7 +460,9 @@ export interface FileRouteTypes {
     | '/'
     | '/accounts'
     | '/admin'
+    | '/admin-login'
     | '/checkout'
+    | '/complete-profile'
     | '/dashboard'
     | '/favorites'
     | '/forgot-password'
@@ -409,11 +477,15 @@ export interface FileRouteTypes {
     | '/support'
     | '/accounts/$account'
     | '/admin/accounts'
+    | '/admin/deposits'
     | '/admin/games'
     | '/admin/orders'
     | '/admin/packages'
+    | '/admin/payment-methods'
     | '/admin/settings'
     | '/admin/support'
+    | '/admin/topup-failures'
+    | '/admin/users'
     | '/dashboard/favorites'
     | '/dashboard/orders'
     | '/dashboard/players'
@@ -431,7 +503,9 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AccountsRoute: typeof AccountsRouteWithChildren
   AdminRoute: typeof AdminRouteWithChildren
+  AdminLoginRoute: typeof AdminLoginRoute
   CheckoutRoute: typeof CheckoutRoute
+  CompleteProfileRoute: typeof CompleteProfileRoute
   DashboardRoute: typeof DashboardRouteWithChildren
   FavoritesRoute: typeof FavoritesRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
@@ -469,11 +543,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin-login': {
+      id: '/admin-login'
+      path: '/admin-login'
+      fullPath: '/admin-login'
+      preLoaderRoute: typeof AdminLoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/checkout': {
       id: '/checkout'
       path: '/checkout'
       fullPath: '/checkout'
       preLoaderRoute: typeof CheckoutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/complete-profile': {
+      id: '/complete-profile'
+      path: '/complete-profile'
+      fullPath: '/complete-profile'
+      preLoaderRoute: typeof CompleteProfileRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboard': {
@@ -588,6 +676,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminAccountsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/deposits': {
+      id: '/admin/deposits'
+      path: '/deposits'
+      fullPath: '/admin/deposits'
+      preLoaderRoute: typeof AdminDepositsRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/games': {
       id: '/admin/games'
       path: '/games'
@@ -609,6 +704,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminPackagesRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/payment-methods': {
+      id: '/admin/payment-methods'
+      path: '/payment-methods'
+      fullPath: '/admin/payment-methods'
+      preLoaderRoute: typeof AdminPaymentMethodsRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/settings': {
       id: '/admin/settings'
       path: '/settings'
@@ -621,6 +723,20 @@ declare module '@tanstack/react-router' {
       path: '/support'
       fullPath: '/admin/support'
       preLoaderRoute: typeof AdminSupportRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/topup-failures': {
+      id: '/admin/topup-failures'
+      path: '/topup-failures'
+      fullPath: '/admin/topup-failures'
+      preLoaderRoute: typeof AdminTopupFailuresRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/users': {
+      id: '/admin/users'
+      path: '/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof AdminUsersRouteImport
       parentRoute: typeof AdminRoute
     }
     '/dashboard/': {
@@ -705,21 +821,29 @@ const AccountsRouteWithChildren = AccountsRoute._addFileChildren(
 
 interface AdminRouteChildren {
   AdminAccountsRoute: typeof AdminAccountsRoute
+  AdminDepositsRoute: typeof AdminDepositsRoute
   AdminGamesRoute: typeof AdminGamesRoute
   AdminOrdersRoute: typeof AdminOrdersRoute
   AdminPackagesRoute: typeof AdminPackagesRoute
+  AdminPaymentMethodsRoute: typeof AdminPaymentMethodsRoute
   AdminSettingsRoute: typeof AdminSettingsRoute
   AdminSupportRoute: typeof AdminSupportRoute
+  AdminTopupFailuresRoute: typeof AdminTopupFailuresRoute
+  AdminUsersRoute: typeof AdminUsersRoute
   AdminIndexRoute: typeof AdminIndexRoute
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
   AdminAccountsRoute: AdminAccountsRoute,
+  AdminDepositsRoute: AdminDepositsRoute,
   AdminGamesRoute: AdminGamesRoute,
   AdminOrdersRoute: AdminOrdersRoute,
   AdminPackagesRoute: AdminPackagesRoute,
+  AdminPaymentMethodsRoute: AdminPaymentMethodsRoute,
   AdminSettingsRoute: AdminSettingsRoute,
   AdminSupportRoute: AdminSupportRoute,
+  AdminTopupFailuresRoute: AdminTopupFailuresRoute,
+  AdminUsersRoute: AdminUsersRoute,
   AdminIndexRoute: AdminIndexRoute,
 }
 
@@ -765,7 +889,9 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccountsRoute: AccountsRouteWithChildren,
   AdminRoute: AdminRouteWithChildren,
+  AdminLoginRoute: AdminLoginRoute,
   CheckoutRoute: CheckoutRoute,
+  CompleteProfileRoute: CompleteProfileRoute,
   DashboardRoute: DashboardRouteWithChildren,
   FavoritesRoute: FavoritesRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,

@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from '@tanstack/react-router';
+import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   Shield,
   ShieldCheck,
@@ -14,30 +14,29 @@ import {
   Clock,
   Sparkles,
   Smartphone,
-  ExternalLink,
   FileText,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { pageHead } from '@/lib/store-data';
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { pageHead } from "@/lib/store-data";
 
-export const Route = createFileRoute('/privacy-policy')({
+export const Route = createFileRoute("/privacy-policy")({
   head: () =>
     pageHead(
-      'Privacy Policy',
-      'Learn how HASA GOLD STORE protects your gaming profile, Player IDs, and data with zero password storage and encrypted connections.'
+      "Privacy Policy",
+      "Learn what account, Player ID, order, and wallet information HASA GOLD STORE stores and how it is used.",
     ),
   component: PrivacyPolicyPage,
 });
 
 function PrivacyPolicyPage() {
   const sections = [
-    { id: 'collection', num: '01', title: 'Information We Collect' },
-    { id: 'use-of-data', num: '02', title: 'How We Use Information' },
-    { id: 'zero-password', num: '03', title: 'Zero Password Storage & Player Safety' },
-    { id: 'security', num: '04', title: 'Security & Encryption Standards' },
-    { id: 'cookies', num: '05', title: 'Local Storage & Browser Cookies' },
-    { id: 'third-parties', num: '06', title: 'Game Publishers & Third Parties' },
-    { id: 'rights', num: '07', title: 'Your Rights & Contacting Us' },
+    { id: "collection", num: "01", title: "Information We Collect" },
+    { id: "use-of-data", num: "02", title: "How We Use Information" },
+    { id: "zero-password", num: "03", title: "Game Account Safety" },
+    { id: "security", num: "04", title: "Security & Encryption Standards" },
+    { id: "cookies", num: "05", title: "Browser Storage & Cookies" },
+    { id: "third-parties", num: "06", title: "Service Providers" },
+    { id: "rights", num: "07", title: "Your Rights & Contacting Us" },
   ];
 
   return (
@@ -56,9 +55,9 @@ function PrivacyPolicyPage() {
             </span>
             <h1>Privacy Policy</h1>
             <p>
-              At HASA GOLD STORE, we believe in transparent, privacy-first gaming services. We
-              prioritize player safety with minimal data collection, zero password requests, and
-              industry-standard encryption.
+              This policy describes the data handled by the current website. Firebase Authentication
+              manages sign-in; customer profile and order data is stored in Cloud Firestore. Game
+              passwords are not requested.
             </p>
           </div>
           <Button asChild variant="outline" size="sm">
@@ -70,13 +69,13 @@ function PrivacyPolicyPage() {
 
         <div className="policy-meta-pills">
           <span className="policy-pill">
-            <Clock /> Effective: October 2026
+            <Clock /> Applies to current website
           </span>
           <span className="policy-pill">
-            <ShieldCheck /> Version 1.2
+            <ShieldCheck /> Firestore-backed account data
           </span>
           <span className="policy-pill">
-            <Sparkles /> Scope: All Supported Games
+            <Sparkles /> Account & order data
           </span>
         </div>
       </header>
@@ -96,30 +95,27 @@ function PrivacyPolicyPage() {
           <div className="policy-highlight-icon">
             <Lock size={20} />
           </div>
-          <strong>Encrypted Delivery</strong>
-          <p>
-            All network requests and top-up communications use end-to-end TLS encryption to protect
-            in-transit data.
-          </p>
+          <strong>Order delivery is unavailable</strong>
+          <p>The website does not currently connect to game-provider fulfillment services.</p>
         </div>
         <div className="policy-highlight-card">
           <div className="policy-highlight-icon">
             <Smartphone size={20} />
           </div>
-          <strong>On-Device Preferences</strong>
+          <strong>Account preferences</strong>
           <p>
-            Favorites, active theme modes, and demo profiles remain strictly on your local browser
-            cache.
+            Signed-in users' short HASA member IDs, themes, favorites, saved Player IDs, and
+            notification preferences are stored in Firestore. The Firebase UID remains the internal
+            account key.
           </p>
         </div>
         <div className="policy-highlight-card">
           <div className="policy-highlight-icon">
             <ShieldCheck size={20} />
           </div>
-          <strong>No Data Brokerage</strong>
+          <strong>UID-scoped account data</strong>
           <p>
-            We never sell, rent, or trade your player identifiers or personal information to third-party
-            marketers.
+            Firestore customer records and orders are associated with the signed-in Firebase UID.
           </p>
         </div>
       </section>
@@ -142,11 +138,11 @@ function PrivacyPolicyPage() {
           <div className="policy-sidebar-card">
             <strong>Have privacy questions?</strong>
             <p>
-              If you have any questions regarding your player details or data usage, our team is ready
-              to help.
+              A staffed support contact channel has not been configured. The Support page currently
+              provides informational FAQs only.
             </p>
             <Button asChild size="sm" className="w-full">
-              <Link to="/support">Contact Support</Link>
+              <Link to="/support">View Support FAQs</Link>
             </Button>
           </div>
         </aside>
@@ -157,47 +153,47 @@ function PrivacyPolicyPage() {
               <span className="policy-section-badge">01</span>
               <h2>Information We Collect</h2>
             </div>
-            <p>
-              We collect only the essential details necessary to identify public game accounts for
-              currency top-up fulfillment and maintain smooth platform operation:
-            </p>
+            <p>Depending on the features you use, the website stores:</p>
             <ul className="policy-list">
               <li>
                 <CheckCircle2 />
                 <span>
-                  <strong>Public Player Identifiers:</strong> Your in-game User ID (UID), Character ID,
-                  or Zone ID (for example, Free Fire UID or PUBG Mobile ID) required by game publishers
-                  to route top-ups.
+                  <strong>Account data:</strong> Firebase UID, short HASA member ID, email address,
+                  display name, theme, notification preferences, favorites, recent game activity,
+                  and saved Player IDs.
                 </span>
               </li>
               <li>
                 <CheckCircle2 />
                 <span>
-                  <strong>Transaction Metadata:</strong> Order timestamps, game title, currency amount
-                  requested, and reference status for fulfillment confirmation.
+                  <strong>Order data:</strong> Game, selected product, Player ID, server, catalog
+                  price snapshot, selected payment method, payment/order status, payment-proof
+                  filename and timestamp, and the authenticated customer's UID. Submitted proof
+                  images are stored privately in Firebase Storage and linked from the order record.
                 </span>
               </li>
               <li>
                 <CheckCircle2 />
                 <span>
-                  <strong>Device & Network Telemetry:</strong> Standard browser user-agent, IP address,
-                  and error logs used exclusively for fraud mitigation, bot prevention, and system stability.
+                  <strong>Wallet deposit data:</strong> If eZ Cash deposits are configured, the
+                  submitted reference number, provider deposit ID, verification status, and credited
+                  amount.
                 </span>
               </li>
               <li>
                 <CheckCircle2 />
                 <span>
-                  <strong>Support Inquiries:</strong> Any communication messages, error reports, or
-                  receipt screenshots you voluntarily provide when asking for support assistance.
+                  <strong>Authentication data:</strong> Firebase Authentication processes sign-in
+                  credentials. The website does not store passwords itself.
                 </span>
               </li>
             </ul>
             <div className="policy-callout">
               <AlertCircle />
               <div>
-                <strong>Important distinction:</strong> In this storefront demo preview, all top-up
-                options are sample packages and no real monetary transactions or external payments are
-                collected.
+                <strong>Service limitation:</strong> eZ Cash proof is reviewed manually and is not
+                payment verification. Game top-up fulfillment is not automated, and Player IDs are
+                not verified with game publishers.
               </div>
             </div>
           </section>
@@ -208,36 +204,36 @@ function PrivacyPolicyPage() {
               <h2>How We Use Information</h2>
             </div>
             <p>
-              Any data collected is strictly utilized to fulfill top-up orders and guarantee customer
-              satisfaction:
+              Data is used to authenticate your account, save your preferences, create and display
+              orders, and allow authorized administrators to review submitted eZ Cash payment proof:
             </p>
             <ul className="policy-list">
               <li>
                 <CheckCircle2 />
                 <span>
-                  <strong>Fulfillment & Direct Top-Ups:</strong> Relaying player IDs to authorized
-                  publisher gateways to credit in-game Diamonds, UC, Gold, or CP.
+                  <strong>Account features:</strong> Displaying your profile and restoring your
+                  saved preferences and Player IDs across signed-in sessions.
                 </span>
               </li>
               <li>
                 <CheckCircle2 />
                 <span>
-                  <strong>Customer Service & Dispute Resolution:</strong> Reviewing transaction logs
-                  to investigate delayed deliveries, top-up verifications, or refund queries.
+                  <strong>Order history:</strong> Showing the order records associated with your
+                  UID.
                 </span>
               </li>
               <li>
                 <CheckCircle2 />
                 <span>
-                  <strong>Platform Integrity & Anti-Fraud:</strong> Protecting against malicious
-                  automated bots, unauthorized duplicate submissions, and payment disputes.
+                  <strong>Wallet deposits:</strong> Sending a submitted eZ Cash reference to the
+                  configured deposit provider for verification and recording its result.
                 </span>
               </li>
               <li>
                 <CheckCircle2 />
                 <span>
-                  <strong>Experience Enhancements:</strong> Analyzing website performance and page speed
-                  to ensure smooth navigation across all desktop and mobile devices.
+                  <strong>Service operation:</strong> Processing requests and displaying errors
+                  needed to operate the website.
                 </span>
               </li>
             </ul>
@@ -250,37 +246,39 @@ function PrivacyPolicyPage() {
             </div>
             <p>
               Your game account credentials are <strong>strictly your own</strong>. HASA GOLD STORE
-              operates on a direct-to-ID model:
+              does not request game passwords. Player IDs entered for orders are stored with the
+              order record and are not verified against game servers:
             </p>
             <ul className="policy-list">
               <li>
                 <CheckCircle2 />
                 <span>
-                  <strong>Never ask for passwords:</strong> We will never ask for your game password,
-                  Google account, Facebook login, Apple ID, or secondary verification codes.
+                  <strong>Never ask for passwords:</strong> We will never ask for your game
+                  password, Google account, Facebook login, Apple ID, or secondary verification
+                  codes.
                 </span>
               </li>
               <li>
                 <CheckCircle2 />
                 <span>
-                  <strong>No Account Takeovers:</strong> Delivery occurs through official publisher
-                  recharge APIs that require only public numerical UIDs.
+                  <strong>No provider delivery:</strong> The website currently has no game-provider
+                  fulfillment integration.
                 </span>
               </li>
               <li>
                 <CheckCircle2 />
                 <span>
                   <strong>Phishing Warning:</strong> If anyone claiming to represent HASA GOLD STORE
-                  requests your game password, please do not disclose it and immediately notify our
-                  support staff.
+                  requests your game password, do not disclose it. A staffed support contact is not
+                  currently available on this website.
                 </span>
               </li>
             </ul>
             <div className="policy-callout">
               <ShieldCheck />
               <div>
-                <strong>Golden Safety Rule:</strong> Never share your game password with anyone.
-                Authorized gaming top-up delivery requires only your public Player ID.
+                <strong>Golden Safety Rule:</strong> Never share your game password with anyone. A
+                Player ID is not proof of ownership and is not verified by this website.
               </div>
             </div>
           </section>
@@ -291,30 +289,30 @@ function PrivacyPolicyPage() {
               <h2>Security & Encryption Standards</h2>
             </div>
             <p>
-              We enforce multi-tiered defense mechanisms to safeguard all communications and player
-              data:
+              Firebase Authentication and Firestore Security Rules provide the configured identity
+              and data-access controls. No client-side admin management or payment-card handling is
+              enabled.
             </p>
             <ul className="policy-list">
               <li>
                 <CheckCircle2 />
                 <span>
-                  <strong>HTTPS / Transport Layer Security (TLS):</strong> Modern encryption protocols
-                  protect all data traveling between your device and our servers.
+                  <strong>Transport security:</strong> Use the HTTPS website endpoint for traffic in
+                  transit. The deployment's host and Firebase apply their own security controls.
                 </span>
               </li>
               <li>
                 <CheckCircle2 />
                 <span>
-                  <strong>Restricted Database Access:</strong> Internal administrative tools employ
-                  strict role-based access control (RBAC) and audited session tracking.
+                  <strong>Firestore rules:</strong> Customer documents are UID-scoped; clients
+                  cannot write orders, wallet credits, catalog data, or administrative records.
                 </span>
               </li>
               <li>
                 <CheckCircle2 />
                 <span>
-                  <strong>Isolated Payment Processing:</strong> When live billing is enabled, sensitive
-                  card and bank details are processed directly by certified PCI-DSS Level 1 payment
-                  gateways and are never stored on our web servers.
+                  <strong>Payment data:</strong> Card and bank checkout is not available. Do not
+                  enter payment credentials on this website.
                 </span>
               </li>
             </ul>
@@ -323,11 +321,12 @@ function PrivacyPolicyPage() {
           <section id="cookies" className="policy-section">
             <div className="policy-section-header">
               <span className="policy-section-badge">05</span>
-              <h2>Local Storage & Browser Cookies</h2>
+              <h2>Browser Storage & Cookies</h2>
             </div>
             <p>
-              We use minimal, browser-safe web storage techniques to give you a responsive browsing
-              experience:
+              The application does not use localStorage or sessionStorage for customer business
+              data. Firebase Authentication manages its own session persistence. Signed-in account
+              preferences are stored in Firestore.
             </p>
             <div className="policy-table-wrapper">
               <table className="policy-table">
@@ -340,31 +339,44 @@ function PrivacyPolicyPage() {
                 </thead>
                 <tbody>
                   <tr>
-                    <td><strong>Theme Preference</strong></td>
-                    <td>Maintains your chosen Dark or Light color mode preference.</td>
-                    <td>Persistent (Local Storage)</td>
+                    <td>
+                      <strong>Firebase Authentication session</strong>
+                    </td>
+                    <td>Maintains sign-in state according to the Remember me choice.</td>
+                    <td>Managed by Firebase Authentication</td>
                   </tr>
                   <tr>
-                    <td><strong>Saved Favorites</strong></td>
-                    <td>Holds your starred games list during browsing sessions.</td>
-                    <td>Session-based</td>
+                    <td>
+                      <strong>Account profile and preferences</strong>
+                    </td>
+                    <td>
+                      Stores saved Player IDs, favorites, theme, notifications, and recent games.
+                    </td>
+                    <td>Firestore, associated with your Firebase UID</td>
                   </tr>
                   <tr>
-                    <td><strong>Demo Profile Cache</strong></td>
-                    <td>Stores local demo name and simulated account settings on your current device.</td>
-                    <td>Local device only</td>
+                    <td>
+                      <strong>Orders and wallet deposits</strong>
+                    </td>
+                    <td>
+                      Stores orders and payment-proof images associated with your UID for authorized
+                      administrators to review.
+                    </td>
+                    <td>Firestore and private Firebase Storage</td>
                   </tr>
                   <tr>
-                    <td><strong>Session Security</strong></td>
-                    <td>Protects against Cross-Site Request Forgery (CSRF) vulnerabilities.</td>
-                    <td>Session duration</td>
+                    <td>
+                      <strong>Temporary interface state</strong>
+                    </td>
+                    <td>Controls open dialogs, form edits, and other non-persistent page state.</td>
+                    <td>Current page session</td>
                   </tr>
                 </tbody>
               </table>
             </div>
             <p>
-              You can clear your browser storage or cookies at any time through your web browser
-              settings without affecting your ability to browse the game catalog.
+              Clearing browser site data may sign you out. Firestore account records are not deleted
+              when browser data is cleared.
             </p>
           </section>
 
@@ -374,38 +386,39 @@ function PrivacyPolicyPage() {
               <h2>Game Publishers & Third Parties</h2>
             </div>
             <p>
-              To complete digital top-up fulfillment, public player IDs are communicated with game
-              publishers and official distribution networks:
+              The website uses Firebase Authentication, Cloud Firestore, and private Firebase
+              Storage for accounts, orders, and payment-proof images. The optional Free Fire name
+              lookup sends the entered Player ID to Nexaura; no Player ID is sent to game publishers
+              for top-up fulfillment:
             </p>
             <ul className="policy-list">
               <li>
                 <CheckCircle2 />
+                <span>Game-provider integrations: not configured.</span>
+              </li>
+              <li>
+                <CheckCircle2 />
+                <span>Card and bank payment processors: not configured.</span>
+              </li>
+              <li>
+                <CheckCircle2 />
                 <span>
-                  <strong>Garena:</strong> Delivery of Free Fire Diamonds.
+                  Firebase Authentication and Firestore: account identity and UID-owned application
+                  data.
                 </span>
               </li>
               <li>
                 <CheckCircle2 />
                 <span>
-                  <strong>NetEase Games:</strong> Delivery of Blood Strike Gold vouchers.
-                </span>
-              </li>
-              <li>
-                <CheckCircle2 />
-                <span>
-                  <strong>Tencent / Level Infinite:</strong> Delivery of PUBG Mobile Unknown Cash (UC).
-                </span>
-              </li>
-              <li>
-                <CheckCircle2 />
-                <span>
-                  <strong>Activision:</strong> Delivery of Call of Duty: Mobile CP top-ups.
+                  Nexaura: eZ Cash deposit verification or optional Free Fire player-name lookup,
+                  when the relevant server integration is configured.
                 </span>
               </li>
             </ul>
             <p>
-              All game trademarks, logos, and character artworks belong to their respective owners.
-              Third parties are authorized only to use transmitted IDs for product fulfillment.
+              Firebase and Nexaura process data according to their own terms and privacy policies.
+              Firebase may also process technical data needed to provide its services. No game
+              account credentials are collected.
             </p>
           </section>
 
@@ -415,29 +428,29 @@ function PrivacyPolicyPage() {
               <h2>Your Rights & Contacting Us</h2>
             </div>
             <p>
-              You maintain rights over your personal data under applicable data privacy laws,
+              Depending on applicable law, you may have rights regarding your personal information,
               including:
             </p>
             <ul className="policy-list">
               <li>
                 <CheckCircle2 />
                 <span>
-                  <strong>Access & Correction:</strong> Request details on transactions or player IDs
-                  associated with your records.
+                  <strong>Access & Correction:</strong> The dashboard shows your saved profile
+                  preferences, Player IDs, and order history. The website has no data-export tool.
                 </span>
               </li>
               <li>
                 <CheckCircle2 />
                 <span>
-                  <strong>Deletion & Erasure:</strong> Request the purging of support tickets, order
-                  logs, or contact records from active systems.
+                  <strong>Deletion & Erasure:</strong> Account deletion is not self-service on this
+                  website. Order and financial records may be retained where required.
                 </span>
               </li>
               <li>
                 <CheckCircle2 />
                 <span>
-                  <strong>Inquiries:</strong> If you have any inquiries or concerns regarding this policy,
-                  visit our <Link to="/support">Support Center</Link> or view our <Link to="/refund-policy">Refund Policy</Link>.
+                  <strong>Inquiries:</strong> The Support page currently contains FAQs only; a
+                  staffed privacy contact channel has not been configured.
                 </span>
               </li>
             </ul>

@@ -18,6 +18,9 @@ import tailwindcss from "@tailwindcss/vite";
 export default defineConfig(async ({ command, mode }): Promise<UserConfig> => {
   const isBuild = command === "build";
   const isDevBuild = isBuild && mode === "development";
+  // Vercel sets VERCEL=1 for every build. Its preset writes the Build Output
+  // API tree to .vercel/output, so the Cloudflare output options must not apply.
+  const isVercelBuild = Boolean(process.env["VERCEL"]) || process.env["NITRO_PRESET"] === "vercel";
 
   const plugins: PluginOption[] = [];
 
@@ -57,27 +60,38 @@ export default defineConfig(async ({ command, mode }): Promise<UserConfig> => {
   if (isBuild) {
     plugins.push(
       nitro({
-        defaultPreset: "cloudflare-module",
-        output: {
-          dir: ".output",
-          serverDir: ".output/server",
-          publicDir: ".output/public",
-        },
-        cloudflare: {
-          nodeCompat: true,
-          deployConfig: true,
-        },
+        defaultPreset: isVercelBuild ? "vercel" : "cloudflare-module",
+        ...(isVercelBuild
+          ? {}
+          : {
+              output: {
+                dir: ".output",
+                serverDir: ".output/server",
+                publicDir: ".output/public",
+              },
+              cloudflare: {
+                nodeCompat: true,
+                deployConfig: true,
+              },
+            }),
       }),
     );
   }
 
   plugins.push(viteReact());
 
-  // Inject VITE_* variables from .env files into the client bundle.
+  // Load server-only variables into the dev/build process without defining them
+  // for the client bundle. Only VITE_* values are exposed through import.meta.env.
   const envDefine: Record<string, string> = {};
-  const loadedEnv = loadEnv(mode, process.cwd(), "VITE_");
+  const loadedEnv = loadEnv(mode, process.cwd(), "");
   for (const [key, value] of Object.entries(loadedEnv)) {
-    envDefine[`import.meta.env.${key}`] = JSON.stringify(value);
+    if (key.startsWith("VITE_")) {
+      envDefine[`import.meta.env.${key}`] = JSON.stringify(value);
+    } else {
+      if (process.env[key] === undefined || process.env[key] === "") {
+        process.env[key] = value;
+      }
+    }
   }
 
   return {
@@ -120,6 +134,7 @@ export default defineConfig(async ({ command, mode }): Promise<UserConfig> => {
     server: {
       host: "::",
       port: 8080,
+      allowedHosts: ["fine-frogs-kneel.loca.lt"],
       // Keep generated build output out of the dev watcher. These dirs are
       // gitignored, and on Windows a concurrent build writing into them raises
       // EBUSY on the watched file, which crashes the dev server.

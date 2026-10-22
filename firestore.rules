@@ -1,0 +1,154 @@
+rules_version = '2';
+
+// HASA GOLD STORE — Firestore Security Rules
+//
+// Trust model:
+//   - Catalog (games, products, settings) is public-read for ACTIVE docs only.
+//     All writes are denied to clients; only the Firebase Admin SDK (server,
+//     which bypasses these rules) can manage catalog content.
+//   - users/{uid}: a customer may read and update only their own doc, and only
+//     the non-privileged fields. `role`, `uid`, `email`, and the server-assigned
+//     `memberId` are immutable from the client, so no one can self-escalate.
+//   - orders/{orderId}: a customer may READ only their own orders. ALL client
+//     writes (create/update/delete) are denied; orders are created exclusively
+//     through a trusted server-side operation (Admin SDK). Clients therefore
+//     cannot create fake orders, set prices, or mark orders paid/delivered.
+//
+// The Admin SDK always bypasses these rules. "deny" here only blocks the
+// client SDK; it does not block the trusted server.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---- helpers ---------------------------------------------------------
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+    function isOwner(uid) {
+      return isVerifiedUser() && request.auth.uid == uid;
+    }
+    // A missing profileComplete field counts as complete (legacy docs predate
+    // the field). Direct field access on a missing key raises a rules error and
+    // denies the request, so read it with Map.get() and a safe default.
+    function hasCompletedCustomerProfile() {
+      let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
+      return isVerifiedUser()
+        && exists(userPath)
+        && get(userPath).data.get('profileComplete', true) != false;
+    }
+
+    // ---- gameAccounts: public read (active only), no client writes ----------
+    match /gameAccounts/{id} {
+      allow read: if resource == null
+        ? false
+        : resource.data.active == true;
+      allow write: if false;
+    }
+
+    // ---- games: public read (active only), no client writes --------------
+    match /games/{slug} {
+      allow read: if resource == null
+        ? false
+        : resource.data.active == true;
+      allow write: if false;
+    }
+
+    // ---- products: public read (active only), no client writes -----------
+    match /products/{id} {
+      allow read: if resource == null
+        ? false
+        : resource.data.active == true;
+      allow write: if false;
+    }
+
+    // ---- settings: public read, no client writes ------------------------
+    match /settings/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // ---- users: self-owned, limited fields, no role escalation ----------
+    match /users/{uid} {
+      allow read: if isOwner(uid);
+
+      // A user may create their own profile exactly once, with a fixed
+      // "customer" role and no admin escalation.
+      allow create: if isOwner(uid)
+        && request.resource.data.role == 'customer'
+        && request.resource.data.uid == uid
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() <= 80
+        && request.resource.data.profileComplete is bool
+        && (
+          (request.auth.token.firebase.sign_in_provider == 'password'
+            && request.resource.data.profileComplete == true)
+          || (request.auth.token.firebase.sign_in_provider == 'google.com'
+            && request.resource.data.profileComplete == false)
+        )
+        && (!('phoneNumber' in request.resource.data)
+          || (request.resource.data.phoneNumber is string
+            && request.resource.data.phoneNumber.size() <= 32))
+        && request.resource.data.notificationPrefs is map
+        && request.resource.data.savedPlayerIds is map
+        && request.resource.data.recentViewedGames is list
+        && request.resource.data.recentViewedGames.size() <= 4
+        && request.resource.data.favorites is list
+        && request.resource.data.favorites.size() <= 100
+        && request.resource.data.theme in ['light', 'dark', 'system']
+        && request.resource.data.keys().hasOnly([
+          'uid', 'email', 'displayName', 'role', 'notificationPrefs',
+          'savedPlayerIds', 'recentViewedGames', 'favorites', 'theme',
+          'phoneNumber', 'profileComplete', 'createdAt', 'updatedAt'
+        ]);
+
+      // Financial fields and identity/authorization fields can only be changed
+      // by trusted server operations.
+      allow update: if isOwner(uid)
+        && resource.data.get('profileComplete', true) != false
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'displayName', 'notificationPrefs', 'savedPlayerIds',
+          'recentViewedGames', 'favorites', 'theme', 'updatedAt'
+        ])
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() <= 80
+        && request.resource.data.notificationPrefs is map
+        && request.resource.data.savedPlayerIds is map
+        && request.resource.data.recentViewedGames is list
+        && request.resource.data.recentViewedGames.size() <= 4
+        && request.resource.data.favorites is list
+        && request.resource.data.favorites.size() <= 100
+        && request.resource.data.theme in ['light', 'dark', 'system'];
+
+      allow delete: if false;
+    }
+
+    // ---- orders: read own only, NO client writes ------------------------
+    match /orders/{orderId} {
+      allow read: if hasCompletedCustomerProfile()
+        && resource.data.customerUid == request.auth.uid;
+      allow write: if false; // created/managed by the trusted server (Admin SDK)
+    }
+
+    // Deposit status and credits are written only by trusted server functions.
+    match /wallet_deposits/{depositId} {
+      allow read: if hasCompletedCustomerProfile() && resource.data.uid == request.auth.uid;
+      allow write: if false;
+    }
+
+    // Administrator wallet adjustments are immutable and visible only to
+    // the customer whose balance was adjusted.
+    match /wallet_adjustments/{adjustmentId} {
+      allow read: if hasCompletedCustomerProfile() && resource.data.uid == request.auth.uid;
+      allow write: if false;
+    }
+
+    // ---- default: deny everything else ----------------------------------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
