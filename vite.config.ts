@@ -3,8 +3,6 @@ import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import { nitro } from "nitro/vite";
 import viteReact from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
-import fs from "node:fs";
-import path from "node:path";
 
 // Standalone Vite configuration for this TanStack Start app.
 //
@@ -79,9 +77,17 @@ export default defineConfig(async ({ command, mode }): Promise<UserConfig> => {
                   "@google-cloud/storage",
                 ],
               },
-              // Rolldown only rewrites the imports above to runtime requires;
-              // without an explicit trace the packages never reach the
-              // deployed function's node_modules.
+              // The tracer copies only the files it deems reachable, so the
+              // externalized Firestore client's runtime requirements would
+              // land in the function incomplete (missing entries such as
+              // protobufjs/minimal or whole packages like google-gax).
+              // scripts/vercel-postbuild.mjs, chained after `vite build` in
+              // package.json, replaces them with full copies. It must stay a
+              // post-build script: defining a Nitro `compiled` hook here
+              // shadows the Vercel preset's own compiled hook, which is what
+              // writes config.json and .vc-config.json into the Build Output
+              // API — without them Vercel cannot consume the output and the
+              // deployment fails with STATIC_BUILD_NO_OUT_DIR.
               traceDeps: [
                 "firebase-admin",
                 "@google-cloud/firestore",
@@ -90,46 +96,6 @@ export default defineConfig(async ({ command, mode }): Promise<UserConfig> => {
                 "@grpc/proto-loader",
                 "protobufjs",
               ],
-              // The dependency tracer copies only the files it deems reachable,
-              // so the externalized Firestore client's runtime requirements
-              // land in the function incomplete (missing entries such as
-              // protobufjs/minimal or whole packages like google-gax), which
-              // only surfaces as MODULE_NOT_FOUND on the deployed function.
-              // Replace them with full copies (and their dependency closure)
-              // from the project's node_modules after build.
-              hooks: {
-                compiled: (nitro) => {
-                  const seeds = [
-                    "@google-cloud/firestore",
-                    "@google-cloud/storage",
-                    "google-gax",
-                    "@grpc/grpc-js",
-                    "@grpc/proto-loader",
-                    "protobufjs",
-                    "@opentelemetry/api",
-                    "functional-red-black-tree",
-                  ];
-                  const rootNm = path.join(nitro.options.rootDir, "node_modules");
-                  const destNm = path.join(nitro.options.output.serverDir, "node_modules");
-                  const queue = [...seeds];
-                  const visited = new Set<string>();
-                  while (queue.length > 0) {
-                    const name = queue.shift() as string;
-                    if (visited.has(name)) continue;
-                    visited.add(name);
-                    const source = path.join(rootNm, name);
-                    const destination = path.join(destNm, name);
-                    const sourcePkg = path.join(source, "package.json");
-                    if (!fs.existsSync(sourcePkg)) continue;
-                    fs.rmSync(destination, { recursive: true, force: true });
-                    fs.cpSync(source, destination, { recursive: true });
-                    const manifest = JSON.parse(fs.readFileSync(sourcePkg, "utf8")) as {
-                      dependencies?: Record<string, string>;
-                    };
-                    queue.push(...Object.keys(manifest.dependencies ?? {}));
-                  }
-                },
-              },
             }
           : {
               output: {
