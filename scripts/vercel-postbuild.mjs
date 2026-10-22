@@ -14,13 +14,30 @@
 import fs from "node:fs";
 import path from "node:path";
 
+// --pre runs before `vite build`. Nitro's dependency tracer stages traced
+// externals into .nf3 inside the function directory; re-running a build over
+// a populated node_modules from the previous build collides with Windows
+// file locks (EBUSY), so remove them and start clean. On Vercel the checkout
+// is fresh and this is a no-op.
 const functionDir = path.resolve(".vercel/output/functions/__server.func");
+if (process.argv.includes("--pre")) {
+  if (fs.existsSync(functionDir)) {
+    fs.rmSync(path.join(functionDir, "node_modules"), { recursive: true, force: true });
+    fs.rmSync(path.join(functionDir, ".nf3"), { recursive: true, force: true });
+  }
+  process.exit(0);
+}
+
 if (!fs.existsSync(functionDir)) {
   console.log("[vercel-postbuild] No Vercel function output found; skipping.");
   process.exit(0);
 }
 
 const seeds = [
+  // firebase-admin itself must be a seed: the tracer leaves a partial copy
+  // (CJS lib/ only), while the bundle imports its ESM entry
+  // (lib/esm/app/index.js), which the partial copy lacks.
+  "firebase-admin",
   "@google-cloud/firestore",
   "@google-cloud/storage",
   "google-gax",
