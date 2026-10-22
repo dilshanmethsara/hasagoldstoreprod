@@ -82,6 +82,60 @@ function Index() {
           </span>
         </div>
       </section>
+      {/* Animated typographic hero shown only on phone-width screens (<=640px). */}
+      <section className="hero-mobile">
+        <span className="hero-mobile-orb is-gold" aria-hidden="true" />
+        <span className="hero-mobile-orb is-blue" aria-hidden="true" />
+        <span className="hero-mobile-grid" aria-hidden="true" />
+        <div className="hero-mobile-inner">
+          <span className="hero-mobile-chip">
+            <span className="hero-mobile-dot" aria-hidden="true" />
+            Live catalog
+          </span>
+          <span className="hero-mobile-brand">HASA GOLD &amp; ACCOUNT STORE</span>
+          <h1>
+            <span className="hero-mobile-line">More play.</span>
+            <span className="hero-mobile-cycle">
+              <span className="hero-mobile-track">
+                <span className="hero-mobile-word">possibilities.</span>
+                <span className="hero-mobile-word">diamonds.</span>
+                <span className="hero-mobile-word">accounts.</span>
+                <span className="hero-mobile-word">top-ups.</span>
+                <span className="hero-mobile-word">possibilities.</span>
+              </span>
+            </span>
+          </h1>
+          <p className="hero-mobile-sub">
+            Your favorite games, all in one place. Browse the catalog and track your orders.
+          </p>
+          <div className="hero-mobile-actions">
+            <Button asChild size="lg">
+              <Link to="/games">
+                Explore top-ups <ArrowRight />
+              </Link>
+            </Button>
+            <Button asChild variant="outline" size="lg">
+              <Link to="/accounts">
+                Browse accounts <ArrowUpRight />
+              </Link>
+            </Button>
+          </div>
+          <ul className="hero-mobile-points">
+            <li>
+              <ShieldCheck size={13} /> Player ID only
+            </li>
+            <li>
+              <BadgeCheck size={13} /> Verified listings
+            </li>
+            <li>
+              <Heart size={13} /> Save favorites
+            </li>
+          </ul>
+          <span className="hero-mobile-note">
+            <Info size={13} /> Payments and top-up fulfillment are not currently available.
+          </span>
+        </div>
+      </section>
       <div className="feature-row">
         <div className="feature-item">
           <Gamepad2 />

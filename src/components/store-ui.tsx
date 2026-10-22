@@ -12,8 +12,11 @@ import {
   Heart,
   HelpCircle,
   Home,
+  Mail,
   Menu,
+  MessageCircle,
   Search,
+  ShieldCheck,
   ShoppingBag,
   X,
   Wallet,
@@ -324,10 +327,23 @@ export function StoreFooter() {
             <p className="footer-tagline">
               {storeSettings?.tagline || "One place. Your favorite games."}
             </p>
+            <div className="footer-trust">
+              <span>
+                <ShieldCheck size={12} /> Player ID only
+              </span>
+              <span>
+                <BadgeCheck size={12} /> Verified listings
+              </span>
+              <span>
+                <Heart size={12} /> Saved favorites
+              </span>
+            </div>
             <div className="footer-contact">
               {storeSettings?.supportEmail && (
                 <a href={`mailto:${storeSettings.supportEmail}`} className="footer-contact-link">
-                  <span className="footer-contact-icon">✉</span>
+                  <span className="footer-contact-icon">
+                    <Mail size={13} />
+                  </span>
                   {storeSettings.supportEmail}
                 </a>
               )}
@@ -336,7 +352,9 @@ export function StoreFooter() {
                   href={`https://wa.me/${storeSettings.supportWhatsapp.replace(/\D/g, "")}`}
                   className="footer-contact-link"
                 >
-                  <span className="footer-contact-icon">💬</span>
+                  <span className="footer-contact-icon">
+                    <MessageCircle size={13} />
+                  </span>
                   WhatsApp Support
                 </a>
               )}
