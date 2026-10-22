@@ -3,6 +3,8 @@ import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import { nitro } from "nitro/vite";
 import viteReact from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import fs from "node:fs";
+import path from "node:path";
 
 // Standalone Vite configuration for this TanStack Start app.
 //
@@ -62,7 +64,73 @@ export default defineConfig(async ({ command, mode }): Promise<UserConfig> => {
       nitro({
         defaultPreset: isVercelBuild ? "vercel" : "cloudflare-module",
         ...(isVercelBuild
-          ? {}
+          ? {
+              // Firebase Admin's Firestore client locates its gRPC proto files
+              // with __dirname. Bundling it into the ESM Vercel function makes
+              // that identifier undefined, so keep it external and let Node
+              // load the package's CommonJS build at runtime.
+              rolldownConfig: {
+                external: [
+                  "firebase-admin",
+                  "firebase-admin/app",
+                  "firebase-admin/auth",
+                  "firebase-admin/firestore",
+                  "@google-cloud/firestore",
+                  "@google-cloud/storage",
+                ],
+              },
+              // Rolldown only rewrites the imports above to runtime requires;
+              // without an explicit trace the packages never reach the
+              // deployed function's node_modules.
+              traceDeps: [
+                "firebase-admin",
+                "@google-cloud/firestore",
+                "@google-cloud/storage",
+                "@grpc/grpc-js",
+                "@grpc/proto-loader",
+                "protobufjs",
+              ],
+              // The dependency tracer copies only the files it deems reachable,
+              // so the externalized Firestore client's runtime requirements
+              // land in the function incomplete (missing entries such as
+              // protobufjs/minimal or whole packages like google-gax), which
+              // only surfaces as MODULE_NOT_FOUND on the deployed function.
+              // Replace them with full copies (and their dependency closure)
+              // from the project's node_modules after build.
+              hooks: {
+                compiled: (nitro) => {
+                  const seeds = [
+                    "@google-cloud/firestore",
+                    "@google-cloud/storage",
+                    "google-gax",
+                    "@grpc/grpc-js",
+                    "@grpc/proto-loader",
+                    "protobufjs",
+                    "@opentelemetry/api",
+                    "functional-red-black-tree",
+                  ];
+                  const rootNm = path.join(nitro.options.rootDir, "node_modules");
+                  const destNm = path.join(nitro.options.output.serverDir, "node_modules");
+                  const queue = [...seeds];
+                  const visited = new Set<string>();
+                  while (queue.length > 0) {
+                    const name = queue.shift() as string;
+                    if (visited.has(name)) continue;
+                    visited.add(name);
+                    const source = path.join(rootNm, name);
+                    const destination = path.join(destNm, name);
+                    const sourcePkg = path.join(source, "package.json");
+                    if (!fs.existsSync(sourcePkg)) continue;
+                    fs.rmSync(destination, { recursive: true, force: true });
+                    fs.cpSync(source, destination, { recursive: true });
+                    const manifest = JSON.parse(fs.readFileSync(sourcePkg, "utf8")) as {
+                      dependencies?: Record<string, string>;
+                    };
+                    queue.push(...Object.keys(manifest.dependencies ?? {}));
+                  }
+                },
+              },
+            }
           : {
               output: {
                 dir: ".output",
