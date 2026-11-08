@@ -17,7 +17,8 @@
     "seroval": "^1.6.11",
     "re2js": "^2.8.7",
     "@grpc/grpc-js": "^1.13.6",
-    "minimatch": "^11.0.1"
+    "minimatch": "^11.0.1",
+    "jose": "^5.9.6"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
