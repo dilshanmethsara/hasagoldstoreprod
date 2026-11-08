@@ -342,9 +342,26 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     const credential = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
     try {
       if (trimmedName) await updateProfile(credential.user, { displayName: trimmedName });
-      await sendApiVerificationEmail(window.location.origin);
     } finally {
+      // The account already exists in Firebase at this point. Sign out before
+      // asking for the verification link so a delivery failure cannot leave the
+      // browser in a half-authenticated state.
       if (auth.currentUser?.uid === credential.user.uid) await firebaseSignOut(auth);
+    }
+    // Report a verification-email failure as its own outcome. The account was
+    // created successfully, so telling the user "signup failed" would be wrong —
+    // they can sign in and request a new link from the login page.
+    try {
+      await sendApiVerificationEmail(window.location.origin);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw Object.assign(
+        new Error(
+          `Your account was created, but we could not send the verification email. ` +
+            `Sign in and choose "Resend verification email" to try again. (${message})`,
+        ),
+        { code: "auth/verification-email-failed", accountCreated: true },
+      );
     }
   }, []);
 
