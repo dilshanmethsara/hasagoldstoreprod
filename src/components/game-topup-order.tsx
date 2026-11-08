@@ -95,6 +95,9 @@ export function GameTopUpOrder({
   const [helpOpen, setHelpOpen] = useState(false);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [paymentMethod, setPaymentMethod] = useState("wallet");
+  // Warning popup shown when a customer picks a method that has a banner enabled.
+  const [warningOpen, setWarningOpen] = useState(false);
+  const [warningMethod, setWarningMethod] = useState<PaymentMethodConfig | null>(null);
 
   // Prefer Firestore-configured payment methods when available (admin can pause/edit them).
   const {
@@ -208,6 +211,21 @@ export function GameTopUpOrder({
       setPaymentMethod(selectedPayment.id);
     }
   }, [paymentMethod, paymentMethodsLoading, selectedPayment]);
+
+  /**
+   * Selecting a payment method shows the admin-configured warning popup when
+   * that method has `warningEnabled` and some text to display. The method still
+   * becomes selected underneath, so dismissing the popup needs no extra work.
+   */
+  function selectPaymentMethod(method: PaymentMethodConfig) {
+    setPaymentMethod(method.id);
+    const title = method.warningTitle?.trim() ?? "";
+    const message = method.warningMessage?.trim() ?? "";
+    if (method.id !== "wallet" && method.warningEnabled === true && (title || message)) {
+      setWarningMethod(method);
+      setWarningOpen(true);
+    }
+  }
 
   function handlePlaceOrder() {
     if (paymentMethodsError) {
@@ -634,7 +652,7 @@ export function GameTopUpOrder({
                       key={method.id}
                       type="button"
                       className={`payment-method-card ${isSelected ? "is-selected" : ""}`}
-                      onClick={() => setPaymentMethod(method.id)}
+                      onClick={() => selectPaymentMethod(method)}
                       aria-pressed={isSelected}
                     >
                       <div className="payment-card-left">
@@ -813,6 +831,38 @@ export function GameTopUpOrder({
           <Button onClick={() => setHelpOpen(false)}>
             Got it <Check size={16} />
           </Button>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={warningOpen} onOpenChange={setWarningOpen}>
+        <DialogContent className="payment-warning-dialog">
+          <div className="payment-warning-hero" aria-hidden="true">
+            <span className="payment-warning-halo" />
+            <span className="payment-warning-icon">
+              <AlertCircle size={26} strokeWidth={2.2} />
+            </span>
+          </div>
+
+          <div className="payment-warning-body">
+            <span className="payment-warning-eyebrow">
+              {warningMethod?.name ?? "Payment method"} notice
+            </span>
+            <DialogTitle className="payment-warning-title">
+              {warningMethod?.warningTitle?.trim() || "Please read before you pay"}
+            </DialogTitle>
+            <DialogDescription asChild>
+              <p className="payment-warning-message">
+                {warningMethod?.warningMessage?.trim() ||
+                  "Check the payment details carefully before completing your payment."}
+              </p>
+            </DialogDescription>
+          </div>
+
+          <div className="payment-warning-actions">
+            <Button className="payment-warning-confirm" onClick={() => setWarningOpen(false)}>
+              Got it <Check size={16} />
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

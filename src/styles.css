@@ -11048,6 +11048,126 @@ input[type="checkbox"] {
   margin-top: 1px;
 }
 
+/* ── Payment method warning popup (game top-up page) ─────────────────────── */
+.payment-warning-dialog {
+  max-width: 440px;
+  padding: 0;
+  overflow: hidden;
+  gap: 0;
+  border: 1px solid color-mix(in oklab, oklch(0.80 0.16 75) 42%, var(--border));
+  border-radius: 20px;
+  background: var(--card);
+  box-shadow:
+    0 24px 60px -18px oklch(0.25 0.05 250 / 0.35),
+    0 2px 6px oklch(0.25 0.025 250 / 0.08);
+}
+
+.payment-warning-hero {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 116px;
+  background:
+    radial-gradient(
+      120% 140% at 50% 0%,
+      color-mix(in oklab, oklch(0.88 0.17 82) 34%, transparent),
+      transparent 70%
+    ),
+    linear-gradient(
+      160deg,
+      color-mix(in oklab, oklch(0.80 0.16 70) 18%, transparent),
+      color-mix(in oklab, oklch(0.72 0.17 50) 8%, transparent)
+    );
+}
+
+.payment-warning-halo {
+  position: absolute;
+  width: 108px;
+  height: 108px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    color-mix(in oklab, oklch(0.86 0.17 80) 40%, transparent),
+    transparent 68%
+  );
+  filter: blur(2px);
+}
+
+.payment-warning-icon {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  color: oklch(0.52 0.16 55);
+  background: color-mix(in oklab, oklch(0.98 0.02 85) 82%, white);
+  border: 1px solid color-mix(in oklab, oklch(0.80 0.16 70) 45%, transparent);
+  box-shadow:
+    0 6px 18px -6px oklch(0.55 0.16 60 / 0.45),
+    inset 0 1px 0 oklch(1 0 0 / 0.7);
+}
+
+.payment-warning-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 22px 26px 4px;
+  text-align: center;
+}
+
+.payment-warning-eyebrow {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: oklch(0.60 0.14 58);
+}
+
+.payment-warning-title {
+  font-size: 1.16rem;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: -0.015em;
+  color: var(--foreground);
+}
+
+.payment-warning-message {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.62;
+  color: var(--muted-foreground);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.payment-warning-actions {
+  display: flex;
+  padding: 20px 26px 24px;
+}
+
+.payment-warning-confirm {
+  width: 100%;
+  gap: 8px;
+  font-weight: 650;
+}
+
+@media (max-width: 480px) {
+  .payment-warning-hero {
+    height: 96px;
+  }
+
+  .payment-warning-body {
+    padding: 18px 20px 4px;
+  }
+
+  .payment-warning-actions {
+    padding: 16px 20px 20px;
+  }
+}
+
 @media (max-width: 760px) {
   .topup-order-container {
     padding-block: 24px 48px;
