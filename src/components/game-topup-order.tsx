@@ -10,6 +10,7 @@ import {
   UserCheck,
   Loader2,
   Gem,
+  Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -298,6 +299,31 @@ export function GameTopUpOrder({
           <span>eZ Cash proof is reviewed manually</span>
         </div>
       </div>
+
+      {isFreeFire && (
+        <a
+          className="topup-powered-by"
+          href="https://wa.me/9477534204"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Chat with Pathum Topup Store on WhatsApp"
+        >
+          <span className="topup-powered-by-glow" aria-hidden="true" />
+          <span className="topup-powered-by-icon" aria-hidden="true">
+            <Zap size={15} strokeWidth={2.4} />
+          </span>
+          <span className="topup-powered-by-copy">
+            <span className="topup-powered-by-kicker">Free Fire top-ups</span>
+            <span className="topup-powered-by-text">
+              Powered by <strong>Pathum Topup Store</strong>
+            </span>
+          </span>
+          <span className="topup-powered-by-badge" aria-hidden="true">
+            <ShieldCheck size={12} strokeWidth={2.6} />
+            Verified
+          </span>
+        </a>
+      )}
 
       <div className="topup-grid-layout">
         <div className="topup-steps-flow">
