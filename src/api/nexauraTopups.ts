@@ -1,5 +1,11 @@
-import { createServerFn } from "@tanstack/react-start";
+﻿import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+
+const API_BASE_URL = (
+  process.env["VITE_API_BASE_URL"] ||
+  process.env["API_BASE_URL"] ||
+  "https://api.hasagold.store"
+).replace(/\/+$/, "");
 
 export const pollNexauraTopup = createServerFn({ method: "POST" })
   .validator((raw: unknown) =>
@@ -11,15 +17,36 @@ export const pollNexauraTopup = createServerFn({ method: "POST" })
       .parse(raw),
   )
   .handler(async ({ data }) => {
-    const { assertCustomerProfileComplete, assertEmailVerified, getAdminAuth, getAdminDb } =
+    const { assertCustomerProfileComplete, assertEmailVerified, getAdminAuth } =
       await import("@/server/firebase-admin");
     const decoded = await getAdminAuth().verifyIdToken(data.idToken, true);
     assertEmailVerified(decoded);
     await assertCustomerProfileComplete(decoded.uid);
-    const order = await getAdminDb().doc(`orders/${data.orderId}`).get();
-    if (!order.exists || order.data()?.["customerUid"] !== decoded.uid) {
-      throw new Error("This order was not found in your account.");
+
+    const response = await fetch(
+      `${API_BASE_URL}/v1/orders/${encodeURIComponent(data.orderId)}/topup`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${data.idToken}`,
+          Accept: "application/json",
+        },
+      },
+    );
+
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      const message =
+        payload &&
+        typeof payload === "object" &&
+        "error" in payload &&
+        payload.error &&
+        typeof payload.error === "object" &&
+        "message" in payload.error &&
+        typeof payload.error.message === "string"
+          ? payload.error.message
+          : `The top-up status request could not be completed (${response.status}).`;
+      throw new Error(message);
     }
-    const { pollFreeFireTopupStatus } = await import("@/server/nexaura-topups");
-    return pollFreeFireTopupStatus(data.orderId);
+    return payload;
   });

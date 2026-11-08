@@ -17,8 +17,38 @@ export const PRODUCT_CATEGORIES = [
   { id: "memberships", label: "Memberships" },
   { id: "level-up-passes", label: "Level Up Passes" },
   { id: "evo-access", label: "Evo Access" },
+  { id: "gold", label: "Gold" },
+  { id: "passes", label: "Passes" },
+  { id: "uc", label: "UC" },
 ] as const;
 export type ProductCategory = (typeof PRODUCT_CATEGORIES)[number]["id"];
+
+export const GAME_CATEGORY_MAP: Record<string, readonly { id: ProductCategory; label: string }[]> =
+  {
+    "free-fire": [
+      { id: "diamonds", label: "Diamonds" },
+      { id: "memberships", label: "Memberships" },
+      { id: "level-up-passes", label: "Level Up Passes" },
+      { id: "evo-access", label: "Evo Access" },
+    ],
+    "blood-strike": [
+      { id: "gold", label: "Gold" },
+      { id: "passes", label: "Passes" },
+    ],
+    "pubg-mobile": [
+      { id: "uc", label: "UC" },
+      { id: "passes", label: "Passes" },
+    ],
+  };
+
+export function getCategoriesForGame(
+  gameSlug: string,
+): readonly { id: ProductCategory; label: string }[] {
+  if (GAME_CATEGORY_MAP[gameSlug]) {
+    return GAME_CATEGORY_MAP[gameSlug];
+  }
+  return PRODUCT_CATEGORIES;
+}
 export type OrderStatus =
   | "pending"
   | "payment_review"
@@ -31,7 +61,9 @@ export type OrderStatus =
   | "refunded";
 export type PaymentStatus =
   "unpaid" | "pending" | "proof_submitted" | "paid" | "failed" | "proof_rejected" | "refunded";
-export type PaymentMethod = "wallet" | "ezcash";
+/** Built-in wallet plus any admin-defined manual method id. */
+export type PaymentMethod = string;
+export type PaymentMethodKind = "wallet" | "manual";
 export type UserRole = "customer" | "admin";
 export type AccountStatus = "Available" | "Reserved" | "Sold";
 export type ThemeChoice = "light" | "dark" | "system";
@@ -43,6 +75,7 @@ export interface GameDoc {
   tone: GameTone;
   icon: GameIcon;
   artworkKey: string;
+  imageUrl?: string | null;
   description: string;
   serverOptions?: string[];
   active: boolean;
@@ -59,6 +92,7 @@ export interface ProductDoc {
   amount: number;
   unitLabel: string;
   name: string;
+  imageUrl?: string | null;
   priceUsd: number;
   pricePkr: number;
   bonus: number;
@@ -179,11 +213,22 @@ export interface WalletAdjustmentDoc {
 }
 
 export interface PaymentMethodConfig {
-  id: PaymentMethod;
+  id: string;
   name: string;
   sub: string;
   short: string;
   active: boolean;
+  /** "wallet" uses the in-app balance; "manual" requires payment proof review. */
+  kind?: PaymentMethodKind;
+  logoUrl?: string | null;
+  /** Account holder name shown at checkout for manual methods. */
+  accountName?: string | null;
+  /** Account / wallet number customers send money to for manual methods. */
+  accountNumber?: string | null;
+  /** Manual methods only: require the customer to upload a payment receipt. */
+  requiresProof?: boolean;
+  /** Game slugs this method is restricted to. Empty / undefined = all games. */
+  games?: string[];
 }
 
 export interface SettingsDoc {
@@ -196,6 +241,8 @@ export interface SettingsDoc {
   currency: string;
   bannerEnabled: boolean;
   maintenanceMode: boolean;
+  maintenanceTitle?: string;
+  maintenanceMessage?: string;
   /** Optional list of payment method configuration exposed in settings/store */
   paymentMethods?: PaymentMethodConfig[];
   updatedAt: number | null;
@@ -210,6 +257,7 @@ export interface CatalogGame {
   image: string;
   logo: string;
   artworkKey: string;
+  imageUrl?: string | null;
   description: string;
   serverOptions: string[];
   active: boolean;

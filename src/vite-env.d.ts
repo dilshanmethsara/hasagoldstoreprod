@@ -8,6 +8,8 @@
 // Dot access also matters at build time: Vite only statically replaces the exact
 // `import.meta.env.VITE_FOO` expression, never `import.meta.env['VITE_FOO']`.
 interface ImportMetaEnv {
+  /** First-party Express API base URL. Defaults to https://api.hasagold.store. */
+  readonly VITE_API_BASE_URL?: string;
   /** Firebase Web API key (public by design — restrict it in Google Cloud Console). */
   readonly VITE_FIREBASE_API_KEY: string;
   /** Firebase Auth domain, e.g. `your-project.firebaseapp.com`. */

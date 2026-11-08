@@ -22,6 +22,34 @@ export default defineConfig(async ({ command, mode }): Promise<UserConfig> => {
   // API tree to .vercel/output, so the Cloudflare output options must not apply.
   const isVercelBuild = Boolean(process.env["VERCEL"]) || process.env["NITRO_PRESET"] === "vercel";
 
+  // Security headers applied to every response (HTML + server functions).
+  // The allow-list covers only the origins this app actually talks to:
+  // the Express API, Firebase Auth (Google endpoints + the auth iframe),
+  // Google Fonts and Supabase storage for payment receipts.
+  const securityHeaders: Record<string, string> = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "geolocation=(), microphone=(), camera=(), interest-cohort=()",
+    "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+    "Content-Security-Policy": [
+      "default-src 'self'",
+      "base-uri 'self'",
+      "object-src 'none'",
+      "frame-ancestors 'none'",
+      "form-action 'self'",
+      "script-src 'self' 'unsafe-inline' https://apis.google.com https://www.gstatic.com",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src 'self' data: https://fonts.gstatic.com",
+      "img-src 'self' data: blob: https:",
+      "media-src 'self' data: blob: https:",
+      "connect-src 'self' https://api.hasagold.store https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://*.supabase.co wss://*.firebaseio.com",
+      "frame-src 'self' https://*.firebaseapp.com https://accounts.google.com",
+      "worker-src 'self' blob:",
+      "upgrade-insecure-requests",
+    ].join("; "),
+  };
+
   const plugins: PluginOption[] = [];
 
   if (mode === "development") {
@@ -61,6 +89,10 @@ export default defineConfig(async ({ command, mode }): Promise<UserConfig> => {
     plugins.push(
       nitro({
         defaultPreset: isVercelBuild ? "vercel" : "cloudflare-module",
+        // Baseline security headers on every response.
+        routeRules: {
+          "/**": { headers: securityHeaders },
+        },
         ...(isVercelBuild
           ? {
               // Firebase Admin's Firestore client locates its gRPC proto files
@@ -111,7 +143,6 @@ export default defineConfig(async ({ command, mode }): Promise<UserConfig> => {
       }),
     );
   }
-
   plugins.push(viteReact());
 
   // Load server-only variables into the dev/build process without defining them

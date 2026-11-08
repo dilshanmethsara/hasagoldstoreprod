@@ -1,10 +1,5 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import {
-  subscribeWalletAdjustments,
-  subscribeWalletBalance,
-  subscribeWalletDeposits,
-  subscribeWalletOrders,
-} from "@/lib/firestore";
+import { createContext, useContext, useState, type ReactNode } from "react";
+import { useWalletData } from "@/lib/firestore";
 import type { OrderDoc, WalletAdjustmentDoc, WalletDepositDoc } from "@/lib/firestore-schema";
 
 export interface WalletTransaction {
@@ -80,11 +75,13 @@ function adjustmentDocToTransaction(adjustment: WalletAdjustmentDoc): WalletTran
 
 function orderDocToTransaction(order: OrderDoc): WalletTransaction | null {
   if (order.paymentMethod !== "wallet") return null;
+  const rawOrder = order as unknown as Record<string, unknown>;
+  const resolvedId = String(order.orderId || rawOrder.id || "");
   return {
-    id: order.orderId,
-    referenceNumber: order.orderId,
+    id: resolvedId,
+    referenceNumber: resolvedId,
     type: "purchase",
-    title: `${order.gameName} top-up`,
+    title: `${order.gameName || "Game"} top-up`,
     amount: -order.pricePkr,
     date: formatTs(order.createdAt),
     createdAt: order.createdAt,
@@ -94,101 +91,24 @@ function orderDocToTransaction(order: OrderDoc): WalletTransaction | null {
   };
 }
 
-const WalletContext = createContext<WalletContextType | null>(null);
+const DEFAULT_WALLET_VALUE: WalletContextType = {
+  balance: 0,
+  currency: "Rs.",
+  transactions: [],
+  formatAmount: (amount: number) => `Rs. ${amount.toLocaleString()}`,
+  isLoaded: false,
+  error: null,
+  historyError: null,
+};
+
+const WalletContext = createContext<WalletContextType>(DEFAULT_WALLET_VALUE);
 
 export function WalletProvider({ children, uid }: { children: ReactNode; uid?: string | null }) {
-  const [balance, setBalance] = useState(0);
-  const [deposits, setDeposits] = useState<WalletDepositDoc[]>([]);
-  const [adjustments, setAdjustments] = useState<WalletAdjustmentDoc[]>([]);
-  const [orders, setOrders] = useState<OrderDoc[]>([]);
-  const [isLoaded, setIsLoaded] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [historyError, setHistoryError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setError(null);
-    setHistoryError(null);
-    setBalance(0);
-    setDeposits([]);
-    setAdjustments([]);
-    setOrders([]);
-    if (!uid) {
-      setIsLoaded(true);
-      return;
-    }
-
-    setIsLoaded(false);
-    let balanceReady = false;
-    let depositsReady = false;
-    let adjustmentsReady = false;
-    let ordersReady = false;
-    const setLoadError = (cause: Error, source: "balance" | "history") => {
-      console.error(`Could not load wallet ${source}:`, cause);
-      const errorCode = (cause as Error & { code?: string }).code;
-      const message =
-        errorCode === "permission-denied"
-          ? source === "balance"
-            ? "Firestore denied wallet balance access. Confirm the signed-in UID and deploy the owner-only Firestore rules."
-            : "Firestore denied wallet history access. Deploy the updated Firestore rules, including wallet adjustment access."
-          : errorCode === "failed-precondition"
-            ? "Wallet data needs a Firestore index. Deploy the indexes from firestore.indexes.json."
-            : `Wallet ${source} could not be loaded. Check your connection and retry.`;
-      if (source === "balance") {
-        setError(message);
-        balanceReady = true;
-      } else {
-        setHistoryError(message);
-      }
-      if (depositsReady && adjustmentsReady && ordersReady && balanceReady) setIsLoaded(true);
-    };
-    const onBalance = (value: number) => {
-      setBalance(value);
-      balanceReady = true;
-      if (depositsReady && adjustmentsReady && ordersReady) setIsLoaded(true);
-    };
-    const onDeposits = (value: WalletDepositDoc[]) => {
-      setDeposits(value);
-      depositsReady = true;
-      if (balanceReady && adjustmentsReady && ordersReady) setIsLoaded(true);
-    };
-    const onAdjustments = (value: WalletAdjustmentDoc[]) => {
-      setAdjustments(value);
-      adjustmentsReady = true;
-      if (balanceReady && depositsReady && ordersReady) setIsLoaded(true);
-    };
-    const onOrders = (value: OrderDoc[]) => {
-      setOrders(value);
-      ordersReady = true;
-      if (balanceReady && depositsReady && adjustmentsReady) setIsLoaded(true);
-    };
-    const onBalanceError = (cause: Error) => setLoadError(cause, "balance");
-    const onDepositsError = (cause: Error) => {
-      depositsReady = true;
-      setLoadError(cause, "history");
-    };
-    const onAdjustmentsError = (cause: Error) => {
-      adjustmentsReady = true;
-      setLoadError(cause, "history");
-    };
-    const onOrdersError = (cause: Error) => {
-      ordersReady = true;
-      setLoadError(cause, "history");
-    };
-    const unsubscribeBalance = subscribeWalletBalance(uid, onBalance, onBalanceError);
-    const unsubscribeDeposits = subscribeWalletDeposits(uid, onDeposits, onDepositsError);
-    const unsubscribeAdjustments = subscribeWalletAdjustments(
-      uid,
-      onAdjustments,
-      onAdjustmentsError,
-    );
-    const unsubscribeOrders = subscribeWalletOrders(uid, onOrders, onOrdersError);
-    return () => {
-      unsubscribeBalance();
-      unsubscribeDeposits();
-      unsubscribeAdjustments();
-      unsubscribeOrders();
-    };
-  }, [uid]);
+  const { data, isLoading, error } = useWalletData(uid);
+  const balance = data?.balance ?? 0;
+  const deposits = data?.deposits ?? [];
+  const adjustments = data?.adjustments ?? [];
+  const orders = data?.orders ?? [];
 
   const transactions = [
     ...deposits.map(depositDocToTransaction),
@@ -204,9 +124,9 @@ export function WalletProvider({ children, uid }: { children: ReactNode; uid?: s
         currency: "Rs.",
         transactions,
         formatAmount,
-        isLoaded,
-        error,
-        historyError,
+        isLoaded: !isLoading,
+        error: error ? "Wallet data could not be loaded. Check your connection and retry." : null,
+        historyError: null,
       }}
     >
       {children}
@@ -216,6 +136,5 @@ export function WalletProvider({ children, uid }: { children: ReactNode; uid?: s
 
 export function useWallet() {
   const context = useContext(WalletContext);
-  if (!context) throw new Error("useWallet must be used within a WalletProvider");
-  return context;
+  return context ?? DEFAULT_WALLET_VALUE;
 }

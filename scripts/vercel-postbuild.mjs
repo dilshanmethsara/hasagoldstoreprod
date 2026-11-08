@@ -86,7 +86,8 @@ const collectNestedDeps = (packagesDir) => {
         continue;
       }
       for (const sub of scoped) {
-        if (sub.isDirectory()) queueNestedPackage(path.join(entry.name, sub.name), path.join(scopeDir, sub.name));
+        if (sub.isDirectory())
+          queueNestedPackage(path.join(entry.name, sub.name), path.join(scopeDir, sub.name));
       }
       continue;
     }

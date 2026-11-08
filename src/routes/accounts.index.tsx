@@ -1,6 +1,16 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { ArrowRight, Filter, Loader2, Package, Search, ShieldCheck } from "lucide-react";
+import {
+  ArrowRight,
+  BadgeCheck,
+  Filter,
+  Gamepad2,
+  Loader2,
+  Package,
+  Search,
+  ShieldCheck,
+  Sparkles,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { pageHead } from "@/lib/store-data";
 import { useGameAccounts, resolveArtwork } from "@/lib/firestore";
@@ -18,8 +28,6 @@ export const Route = createFileRoute("/accounts/")({
 const GAME_FILTERS = [
   { id: "all", label: "All Games" },
   { id: "free-fire", label: "Free Fire" },
-  { id: "pubg-mobile", label: "PUBG Mobile" },
-  { id: "call-of-duty-mobile", label: "COD Mobile" },
   { id: "blood-strike", label: "Blood Strike" },
 ] as const;
 type FilterId = (typeof GAME_FILTERS)[number]["id"];
@@ -114,8 +122,8 @@ function AccountsPage() {
           <span className="eyebrow accounts-eyebrow">ACCOUNT CATALOG</span>
           <h1>Game Account Listings</h1>
           <p>
-            Listings are informational only. This website cannot verify account ownership, accept
-            payment, or transfer an account. Do not send payment for a listing.
+            Account listings are being prepared. The store cannot yet verify account ownership,
+            accept payment, or transfer an account — do not send payment for a listing.
           </p>
           <div className="accounts-trust-row">
             <span>Listing details are not independently verified</span>
@@ -142,31 +150,33 @@ function AccountsPage() {
         </div>
       </div>
 
-      <div className="accounts-toolbar">
-        <div className="accounts-filters" role="group" aria-label="Filter by game">
-          <Filter size={14} className="filter-icon" />
-          {GAME_FILTERS.map((f) => (
-            <button
-              key={f.id}
-              className={`acc-filter-btn ${filter === f.id ? "active" : ""}`}
-              onClick={() => setFilter(f.id)}
-              aria-pressed={filter === f.id}
-            >
-              {f.label}
-            </button>
-          ))}
+      {allAccounts.length > 0 && (
+        <div className="accounts-toolbar">
+          <div className="accounts-filters" role="group" aria-label="Filter by game">
+            <Filter size={14} className="filter-icon" />
+            {GAME_FILTERS.map((f) => (
+              <button
+                key={f.id}
+                className={`acc-filter-btn ${filter === f.id ? "active" : ""}`}
+                onClick={() => setFilter(f.id)}
+                aria-pressed={filter === f.id}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+          <div className="accounts-search-wrap">
+            <Search size={15} className="acc-search-icon" />
+            <input
+              className="accounts-search"
+              placeholder="Search by rank, skin, game…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              aria-label="Search accounts"
+            />
+          </div>
         </div>
-        <div className="accounts-search-wrap">
-          <Search size={15} className="acc-search-icon" />
-          <input
-            className="accounts-search"
-            placeholder="Search by rank, skin, game…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            aria-label="Search accounts"
-          />
-        </div>
-      </div>
+      )}
 
       {isLoading ? (
         <div className="empty-state">
@@ -185,6 +195,35 @@ function AccountsPage() {
           {filtered.map((acc) => (
             <AccountCard key={acc.id} account={acc} />
           ))}
+        </div>
+      ) : allAccounts.length === 0 ? (
+        <div className="accounts-coming-soon">
+          <span className="accounts-coming-soon-glow" aria-hidden="true" />
+          <span className="accounts-coming-soon-icon" aria-hidden="true">
+            <Sparkles size={22} />
+          </span>
+          <span className="accounts-coming-soon-tag">Coming soon</span>
+          <h3>Verified game accounts, hand-checked by us</h3>
+          <p>
+            We are curating a small set of verified accounts with escrow-protected handover.
+            Listings will appear here as soon as verification is complete.
+          </p>
+          <ul className="accounts-coming-soon-points">
+            <li>
+              <ShieldCheck size={14} /> Manually verified before listing
+            </li>
+            <li>
+              <BadgeCheck size={14} /> Escrow-protected handover
+            </li>
+            <li>
+              <Gamepad2 size={14} /> Accounts for every supported game
+            </li>
+          </ul>
+          <Button asChild size="lg" className="accounts-coming-soon-cta">
+            <Link to="/games">
+              Browse top-up packages <ArrowRight size={16} />
+            </Link>
+          </Button>
         </div>
       ) : (
         <div className="empty-state">

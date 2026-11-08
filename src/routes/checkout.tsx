@@ -27,17 +27,18 @@ import { Progress } from "@/components/ui/progress";
 import { pageHead } from "@/lib/store-data";
 import { useGame, useProducts } from "@/lib/firestore";
 import {
-  createOrder,
-  getOrderPaymentProofUploadToken,
-  submitOrderPaymentProof,
-} from "@/api/createOrder";
-import { pollNexauraTopup } from "@/api/nexauraTopups";
+  createApiOrder,
+  getApiProofUploadToken,
+  submitApiProof,
+  fetchApiTopupStatus,
+} from "@/lib/api-client";
 import { fetchStoreSettings } from "@/lib/firestore";
-import { DEFAULT_PAYMENT_METHODS } from "@/lib/payment-methods";
-import { getFirebaseApp, getFirebaseAuth } from "@/lib/firebase";
-import { doc, getDoc, getFirestore } from "firebase/firestore";
+import { DEFAULT_PAYMENT_METHODS, methodRequiresProof } from "@/lib/payment-methods";
+import { getFirebaseAuth } from "@/lib/firebase";
 import { useAccount } from "@/components/account-context";
 import { uploadPaymentProof } from "@/lib/supabase-storage";
+import { getApiWallet } from "@/lib/api-client";
+import { sendOrderConfirmationEmail } from "@/api/sendOrderConfirmationEmail";
 import ezcashLogo from "@/assets/ezcash.jfif";
 
 const terminalNexauraStatuses = new Set(["completed", "failed", "refunded"]);
@@ -45,36 +46,36 @@ const terminalNexauraStatuses = new Set(["completed", "failed", "refunded"]);
 type NexauraWaitStage = "paying" | "processing";
 type ReceiptTone = "success" | "error" | "refund" | "warning" | "info";
 
-/** Friendly provider wording so customers never see raw API statuses. */
+/** Customer-facing friendly wording so players never see supplier/raw API statuses. */
 function nexauraStatusLabel(status?: string): string {
   const value = (status ?? "").trim().toLowerCase();
   switch (value) {
     case "":
-      return "Waiting for provider";
+      return "Initiating automated dispatch";
     case "submitting":
     case "submission_pending":
-      return "Sending to provider";
+      return "Connecting to game server";
     case "pending":
     case "queued":
     case "waiting":
-      return "Queued with provider";
+      return "Queued for automated delivery";
     case "processing":
     case "in_progress":
     case "in-progress":
-      return "Provider processing";
+      return "Delivering top-up";
     case "completed":
     case "success":
       return "Delivered";
     case "failed":
-      return "Delivery failed";
+      return "Delivery pending check";
     case "refunded":
-      return "Refunded by provider";
+      return "Delivery cancelled & refunded";
     case "submission_failed":
-      return "Submission failed";
+      return "Delivery in replenishment queue";
     case "submission_unknown":
-      return "Submission needs review";
+      return "Delivery in verification queue";
     default:
-      return value.replace(/[_-]+/g, " ").replace(/^\w/, (char) => char.toUpperCase());
+      return "Processing top-up";
   }
 }
 
@@ -112,24 +113,35 @@ function NexauraWaitSheet({
   summary,
   status,
   note,
+  issueType,
   providerOrderId,
   pollError,
   elapsedSeconds,
   copied,
   onCopyOrderId,
+  onViewDashboard,
 }: {
   stage: NexauraWaitStage;
   summary: NexauraWaitSummary;
   status?: string | undefined;
   note?: string | null | undefined;
+  issueType?: "stock_issue" | "system_issue" | null | undefined;
   providerOrderId?: string | undefined;
   pollError?: string | undefined;
   elapsedSeconds: number;
   copied: boolean;
   onCopyOrderId: () => void;
+  onViewDashboard?: () => void;
 }) {
   const paying = stage === "paying";
-  const statusText = nexauraStatusLabel(status);
+  const isStock = issueType === "stock_issue";
+  const isSystem = issueType === "system_issue";
+  const statusText = isStock
+    ? "Stock Queued · Resolving"
+    : isSystem
+      ? "Server Delay · Retrying"
+      : nexauraStatusLabel(status);
+
   const steps: Array<{ label: string; detail: string; state: "done" | "active" | "pending" }> = [
     {
       label: "Wallet payment",
@@ -137,45 +149,78 @@ function NexauraWaitSheet({
       state: paying ? "active" : "done",
     },
     {
-      label: "Sent to Nexaura",
+      label: isStock ? "Stock allocation" : isSystem ? "Server connection" : "Game server dispatch",
       detail: paying
         ? "Starts as soon as payment clears"
-        : providerOrderId
-          ? `Provider order ${providerOrderId}`
-          : "Waiting for provider confirmation",
-      state: paying ? "pending" : providerOrderId ? "done" : "active",
+        : isStock
+          ? "Stock queued · automated retry active"
+          : isSystem
+            ? "Connection queued · retrying delivery"
+            : providerOrderId
+              ? `Delivery reference #${providerOrderId}`
+              : "Verifying with game server",
+      state: paying ? "pending" : providerOrderId && !isStock && !isSystem ? "done" : "active",
     },
     {
       label: "Top-up delivered",
-      detail: paying ? "Waiting for earlier steps" : statusText,
-      state: paying ? "pending" : "active",
+      detail: paying
+        ? "Waiting for earlier steps"
+        : status === "completed"
+          ? "Delivered to account"
+          : `Direct credit to UID ${summary.playerId}`,
+      state: paying ? "pending" : status === "completed" ? "done" : "pending",
     },
   ];
 
   return (
-    <div className="nexaura-wait">
+    <div
+      className={`nexaura-wait ${isStock ? "is-stock-warning" : ""} ${isSystem ? "is-system-warning" : ""}`}
+    >
       <span className="nexaura-topbar" aria-hidden="true" />
       <div className="nexaura-wait-head">
-        <div className="nexaura-loader" aria-hidden="true">
-          <span className="nexaura-loader-core">
-            <Loader2 size={26} className="nexaura-spin" />
+        <div
+          className={`nexaura-loader ${isStock || isSystem ? "is-warning" : ""}`}
+          aria-hidden="true"
+        >
+          <span className={`nexaura-loader-core ${isStock || isSystem ? "is-warning-core" : ""}`}>
+            {isStock || isSystem ? (
+              <AlertTriangle size={28} className="text-amber-400 animate-pulse" />
+            ) : (
+              <Loader2 size={26} className="nexaura-spin text-amber-400" />
+            )}
           </span>
         </div>
         <span className="eyebrow">
-          {paying ? "Processing wallet payment" : "Wallet payment received"}
+          {paying
+            ? "Processing wallet payment"
+            : isStock
+              ? "Payment verified · Stock queue"
+              : isSystem
+                ? "Payment verified · Server queue"
+                : "Wallet payment received"}
         </span>
         <DialogTitle className="receipt-title">
-          {paying ? "Completing your order" : "Top-up in progress"}
+          {paying
+            ? "Completing your order"
+            : isStock
+              ? "Stock Allocation In Progress"
+              : isSystem
+                ? "Game Server Delay — Queued"
+                : "Top-up in progress"}
         </DialogTitle>
         <DialogDescription className="receipt-lead">
           {paying
-            ? "We are confirming your wallet payment and sending this top-up to Nexaura. This normally takes a few seconds and can take up to 30 — keep this window open for the result."
-            : "Nexaura is delivering your top-up now. This window updates automatically — there is nothing else you need to do."}
+            ? "We are confirming your wallet payment and connecting to the game server. This normally takes a few seconds — keep this window open for the result."
+            : isStock
+              ? "We've safely verified your payment! Game diamond stock is currently queued for allocation. Our automated system completes orders shortly — you can wait here or view your dashboard."
+              : isSystem
+                ? "We've safely verified your payment! The game server is experiencing a temporary connection delay. Our system is continuously retrying and will deliver your diamonds shortly."
+                : "Your top-up is being delivered directly to your game account. This window updates automatically in real-time."}
         </DialogDescription>
       </div>
 
       <p className="sr-only" role="status" aria-live="polite">
-        Nexaura status: {paying ? "confirming wallet payment" : statusText}.
+        Order status: {paying ? "confirming wallet payment" : statusText}.
       </p>
 
       <ol className="nexaura-steps">
@@ -185,7 +230,11 @@ function NexauraWaitSheet({
               {step.state === "done" ? (
                 <Check size={13} strokeWidth={3} />
               ) : step.state === "active" ? (
-                <Loader2 size={13} className="nexaura-spin" />
+                isStock || isSystem ? (
+                  <span className="nexaura-pulse-dot" />
+                ) : (
+                  <Loader2 size={13} className="nexaura-spin" />
+                )
               ) : null}
             </span>
             <span className="nexaura-step-copy">
@@ -221,7 +270,9 @@ function NexauraWaitSheet({
         </span>
       </div>
 
-      {note && !paying && <p className="nexaura-wait-note">{note}</p>}
+      {note && !paying && !/insufficient|balance|credit|402|nexaura|reseller/i.test(note) && (
+        <p className="nexaura-wait-note">{note}</p>
+      )}
 
       {pollError && (
         <p className="nexaura-wait-error">
@@ -231,16 +282,32 @@ function NexauraWaitSheet({
       )}
 
       <div className="nexaura-wait-foot">
-        <span key={`${stage}-${status ?? "pending"}`} className="nexaura-status-chip">
+        <span
+          key={`${stage}-${status ?? "pending"}`}
+          className={`nexaura-status-chip ${isStock || isSystem ? "is-chip-warning" : ""}`}
+        >
           <span className="nexaura-live-dot" aria-hidden="true" />
           {paying ? "Confirming payment" : statusText}
         </span>
         <span className="nexaura-wait-meta" aria-hidden="true">
           {paying
-            ? `Elapsed ${formatElapsed(elapsedSeconds)} · waiting for provider reply`
-            : `Elapsed ${formatElapsed(elapsedSeconds)} · auto-checking every 4s`}
+            ? `Elapsed ${formatElapsed(elapsedSeconds)} · connecting to server`
+            : `Elapsed ${formatElapsed(elapsedSeconds)} · auto-checking live status`}
         </span>
       </div>
+
+      {onViewDashboard && (
+        <div className="nexaura-wait-actions-bar">
+          <Button
+            variant="outline"
+            size="sm"
+            className="nexaura-leave-btn"
+            onClick={onViewDashboard}
+          >
+            Monitor in Orders Dashboard <ArrowRight size={13} />
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -268,7 +335,7 @@ function CheckoutPage() {
   } = useQuery({
     queryKey: ["storeSettings"],
     queryFn: fetchStoreSettings,
-    staleTime: 60_000,
+    staleTime: 0,
   });
 
   const {
@@ -283,17 +350,24 @@ function CheckoutPage() {
   const paymentMethods =
     storeSettings?.paymentMethods ?? DEFAULT_PAYMENT_METHODS.map((method) => ({ ...method }));
   const selectedPayment = paymentMethods.find((method) => method.id === paymentMethod);
-  const paymentMethodActive = selectedPayment?.active === true;
+  const paymentMethodActive =
+    selectedPayment?.active === true &&
+    (!selectedPayment.games ||
+      selectedPayment.games.length === 0 ||
+      (selectedGame ? selectedPayment.games.includes(selectedGame.id) : false));
+  const isWalletPayment = selectedPayment?.id === "wallet";
+  const isManualPayment = Boolean(selectedPayment) && !isWalletPayment;
+  // Per-method admin flag: must the customer upload a payment receipt?
+  // Wallet never does; a manual method defaults to yes when the flag is absent.
+  const requiresProof = methodRequiresProof(selectedPayment);
   const walletBalanceQuery = useQuery({
     queryKey: ["walletBalance", uid],
     queryFn: async () => {
       if (!uid || getFirebaseAuth().currentUser?.uid !== uid) {
         throw new Error("Sign in to check your wallet balance.");
       }
-      const snapshot = await getDoc(doc(getFirestore(getFirebaseApp()), "users", uid));
-      const balance = snapshot.data()?.["walletBalanceLkr"];
-      if (typeof balance !== "number" || !Number.isFinite(balance) || balance < 0) return 0;
-      return balance;
+      const wallet = await getApiWallet();
+      return wallet.balance;
     },
     enabled: Boolean(uid && paymentMethod === "wallet"),
     staleTime: 10_000,
@@ -334,6 +408,7 @@ function CheckoutPage() {
     nexauraProviderOrderId?: string | undefined;
     nexauraNote?: string | null | undefined;
     nexauraMessage?: string | undefined;
+    nexauraIssueType?: "stock_issue" | "system_issue" | null | undefined;
     nexauraPollError?: string | undefined;
   } | null>(null);
   const isNexauraCheckout = paymentMethod === "wallet" && searchParams.game === "free-fire";
@@ -342,43 +417,57 @@ function CheckoutPage() {
     (processingOrder ||
       Boolean(
         completedOrder?.paymentStatus === "paid" &&
-        completedOrder.nexauraProviderOrderId &&
+        completedOrder.nexauraStatus !== "completed" &&
+        completedOrder.nexauraStatus !== "failed" &&
+        completedOrder.nexauraStatus !== "refunded" &&
         !terminalNexauraStatuses.has(completedOrder.nexauraStatus ?? ""),
       ));
 
   useEffect(() => {
     const localOrderId = completedOrder?.orderId;
-    const providerOrderId = completedOrder?.nexauraProviderOrderId;
     const providerStatus = completedOrder?.nexauraStatus;
     const user = getFirebaseAuth().currentUser;
-    if (
-      !localOrderId ||
-      !providerOrderId ||
-      !user ||
-      (providerStatus && terminalNexauraStatuses.has(providerStatus))
-    ) {
-      return;
-    }
+    const shouldPoll =
+      Boolean(localOrderId) &&
+      Boolean(user) &&
+      providerStatus !== "completed" &&
+      providerStatus !== "failed" &&
+      providerStatus !== "refunded" &&
+      !(providerStatus && terminalNexauraStatuses.has(providerStatus));
+    if (!shouldPoll || !localOrderId) return;
 
     let active = true;
     let timeout: ReturnType<typeof setTimeout>;
     const poll = async () => {
       try {
-        const result = await pollNexauraTopup({
-          data: { idToken: await user.getIdToken(), orderId: localOrderId },
-        });
+        const result = await fetchApiTopupStatus(localOrderId);
         if (!active) return;
-        setCompletedOrder((current) =>
-          current?.orderId === localOrderId
-            ? {
-                ...current,
-                nexauraStatus: result.status,
-                nexauraNote: result.note,
-                nexauraPollError: undefined,
-              }
-            : current,
-        );
-        if (!result.terminal) timeout = setTimeout(() => void poll(), 4000);
+        setCompletedOrder((current) => {
+          if (current?.orderId !== localOrderId) return current;
+          const isInsuff = /insufficient|balance|credit|402/i.test(result.note || "");
+          const issueType =
+            result.issueType ??
+            (result.status === "completed"
+              ? null
+              : !result.orderId
+                ? isInsuff
+                  ? "stock_issue"
+                  : "system_issue"
+                : null);
+
+          return {
+            ...current,
+            nexauraStatus: result.status,
+            nexauraNote: result.note,
+            nexauraIssueType: issueType,
+            // Update provider order ID if backend resolved it via retry
+            ...(result.orderId ? { nexauraProviderOrderId: result.orderId } : {}),
+            nexauraPollError: undefined,
+          };
+        });
+        if (!result.terminal && result.status !== "completed") {
+          timeout = setTimeout(() => void poll(), 4000);
+        }
       } catch (cause) {
         if (!active) return;
         setCompletedOrder((current) =>
@@ -398,11 +487,7 @@ function CheckoutPage() {
       active = false;
       clearTimeout(timeout);
     };
-  }, [
-    completedOrder?.orderId,
-    completedOrder?.nexauraProviderOrderId,
-    completedOrder?.nexauraStatus,
-  ]);
+  }, [completedOrder?.orderId, completedOrder?.nexauraStatus]);
 
   // Elapsed time only ticks while the Nexaura dialog is waiting on a result.
   const [nexauraWaitSeconds, setNexauraWaitSeconds] = useState(0);
@@ -418,9 +503,15 @@ function CheckoutPage() {
 
   const finalPayableLabel = priceLabel;
   const missingDetails = !playerId || !product;
-  const paymentConfigured = Boolean(
-    storeSettings?.paymentEzcashNumber?.trim() && storeSettings?.paymentEzcashName?.trim(),
-  );
+  const paymentAccountNumber =
+    selectedPayment?.accountNumber?.trim() ||
+    (selectedPayment?.id === "ezcash" ? storeSettings?.paymentEzcashNumber?.trim() : "") ||
+    "";
+  const paymentAccountName =
+    selectedPayment?.accountName?.trim() ||
+    (selectedPayment?.id === "ezcash" ? storeSettings?.paymentEzcashName?.trim() : "") ||
+    "";
+  const paymentConfigured = Boolean(paymentAccountNumber && paymentAccountName);
 
   if (gameLoading || productsLoading || settingsLoading) {
     return (
@@ -492,9 +583,11 @@ function CheckoutPage() {
       );
       return;
     }
-    if (isEzcash && (!paymentConfigured || !proofFile)) {
+    if (isManualPayment && (!paymentConfigured || (requiresProof && !proofFile))) {
       toast.error(
-        !paymentConfigured ? "eZ Cash details are not configured" : "Payment proof required",
+        !paymentConfigured
+          ? `${selectedPayment?.name ?? "Payment"} details are not configured`
+          : "Payment proof required",
         {
           description: !paymentConfigured
             ? "Please contact the store before making a payment."
@@ -505,59 +598,98 @@ function CheckoutPage() {
     }
     setProcessingOrder(true);
     try {
-      // Get a fresh ID token so the server function can verify the caller.
-      const auth = getFirebaseAuth();
-      const fbUser = auth.currentUser;
-      const idToken = fbUser ? await fbUser.getIdToken() : null;
+      // Use a deterministic idempotency key based on the order parameters
+      // so a double-click or page refresh cannot place a duplicate order.
+      const idempotencyKey = `checkout-${uid}-${product.id}-${playerId}-${paymentMethod}-${Date.now()}`;
+      const result = await createApiOrder(
+        {
+          productId: product.id,
+          playerId,
+          server,
+          paymentMethod: paymentMethod as "wallet" | "ezcash",
+        },
+        idempotencyKey,
+      );
+      const orderData = result.order;
 
-      if (!idToken || !fbUser) {
-        toast.error("Please sign in to place an order.");
-        setProcessingOrder(false);
-        return;
-      }
-
-      const result = await createOrder({
-        data: { idToken, productId: product.id, playerId, server, paymentMethod },
-      });
+      const rawTopupMsg = result.topup?.message || "";
+      const isInsuff = /insufficient|balance|credit|402/i.test(rawTopupMsg);
+      const isStockOrSystem = !result.topup?.orderId && result.topup?.status !== "completed";
+      const initialIssueType = isStockOrSystem ? (isInsuff ? "stock_issue" : "system_issue") : null;
 
       setCompletedOrder({
-        orderId: result.orderId,
-        gameName: result.gameName,
+        orderId: orderData.id,
+        gameName: orderData.gameName as string,
         gameImage: selectedGame.image,
-        packName: result.packageName,
+        packName: orderData.packageName as string,
         playerId,
         amount: finalPayableLabel,
         paymentMethod,
-        paymentStatus: result.paymentStatus,
-        emailNotificationSent: result.emailNotificationSent,
-        nexauraStatus: result.nexauraSubmission?.status,
-        nexauraProviderOrderId: result.nexauraSubmission?.orderId,
-        nexauraMessage: result.nexauraSubmission?.message,
+        paymentStatus: orderData.paymentStatus as string,
+        emailNotificationSent: false,
+        nexauraStatus: result.topup?.status,
+        nexauraProviderOrderId: result.topup?.orderId,
+        nexauraMessage: result.topup?.message,
+        nexauraIssueType: initialIssueType,
       });
-      if (!result.emailNotificationSent) {
-        toast.error("Order created, but confirmation email was not sent", {
-          description: "Check your account email or contact the store for help.",
+
+      // Send order confirmation email
+      try {
+        const currentUser = getFirebaseAuth().currentUser;
+        if (currentUser) {
+          const idToken = await currentUser.getIdToken();
+          await sendOrderConfirmationEmail({
+            data: {
+              idToken,
+              orderId: orderData.id,
+              gameName: orderData.gameName as string,
+              packageName: orderData.packageName as string,
+              playerId,
+              server,
+              totalLkr: orderData.pricePkr as number,
+              paymentMethod: paymentMethod as "wallet" | "ezcash",
+            },
+          });
+          setCompletedOrder((current) =>
+            current?.orderId === orderData.id
+              ? { ...current, emailNotificationSent: true }
+              : current,
+          );
+        }
+      } catch (emailError) {
+        console.error("Failed to send order confirmation email:", emailError);
+        // Don't show error to user - order was created successfully
+      }
+
+      if (initialIssueType === "stock_issue") {
+        toast.info("Stock Allocation Queued", {
+          description:
+            "Payment confirmed! Diamond stock is queued and your top-up is completing shortly.",
+        });
+      } else if (initialIssueType === "system_issue") {
+        toast.info("Server Connection Delay", {
+          description:
+            "Payment confirmed! Game server connection is retrying and will deliver shortly.",
+        });
+      } else if (result.topup?.status === "completed") {
+        toast.success("Top-up Complete!", {
+          description: "Free Fire diamonds delivered to your account.",
+        });
+      } else if (result.topup?.status === "pending") {
+        toast.info("Order created — top-up processing", {
+          description: "Your order has been queued for automated delivery.",
         });
       }
-      if (result.nexauraSubmission?.status === "submission_failed") {
-        toast.error("Order created, but automatic top-up could not be submitted", {
-          description: result.nexauraSubmission.message,
-        });
-      } else if (result.nexauraSubmission?.status === "submission_unknown") {
-        toast.error("Order created, but top-up submission needs review", {
-          description: result.nexauraSubmission.message,
-        });
-      }
-      if (isEzcash && proofFile) {
-        await uploadProof(result.orderId, proofFile);
+      if (requiresProof && proofFile) {
+        await uploadProof(orderData.id, proofFile);
       } else if (!isNexauraCheckout) {
         toast.success(
           paymentMethod === "wallet" ? "Wallet payment successful" : "Unpaid order created",
           {
             description:
               paymentMethod === "wallet"
-                ? `LKR ${pricePkr.toLocaleString()} was deducted. Order ${result.orderId} is processing.`
-                : `Order ${result.orderId} is pending payment review.`,
+                ? `LKR ${(orderData.pricePkr as number).toLocaleString()} was deducted. Order ${orderData.id} is processing.`
+                : `Order ${orderData.id} is pending payment review.`,
           },
         );
       }
@@ -570,31 +702,15 @@ function CheckoutPage() {
   }
 
   async function uploadProof(orderId: string, file: File) {
-    const currentUser = getFirebaseAuth().currentUser;
-    if (!currentUser) {
-      setProofUploadError("Sign in again before uploading your payment proof.");
-      return;
-    }
     setProofUploading(true);
     setProofUploadError(null);
     setProofUploadProgress(0);
     try {
-      const upload = await getOrderPaymentProofUploadToken({
-        data: {
-          idToken: await currentUser.getIdToken(),
-          orderId,
-        },
-      });
+      const upload = await getApiProofUploadToken(orderId);
       await uploadPaymentProof(upload.signedUrl, file, (progress) => {
         setProofUploadProgress(progress);
       });
-      await submitOrderPaymentProof({
-        data: {
-          idToken: await currentUser.getIdToken(),
-          orderId,
-          fileName: file.name,
-        },
-      });
+      await submitApiProof(orderId, file.name);
       setCompletedOrder((current) =>
         current?.orderId === orderId ? { ...current, paymentStatus: "proof_submitted" } : current,
       );
@@ -817,30 +933,44 @@ function CheckoutPage() {
                   <span className="checkout-step-badge">2</span>
                   <div>
                     <h2>
-                      {isEzcash
-                        ? "Pay by eZ Cash"
-                        : selectedPayment?.id === "wallet"
-                          ? "Pay from wallet"
+                      {isWalletPayment
+                        ? "Pay from wallet"
+                        : isManualPayment
+                          ? `Pay by ${selectedPayment?.name ?? "manual payment"}`
                           : "Payment unavailable"}
                     </h2>
                     <p>
-                      {isEzcash
-                        ? "Send the exact total, then attach your payment receipt."
-                        : selectedPayment?.id === "wallet"
-                          ? "Review your balance, then confirm to pay instantly."
+                      {isWalletPayment
+                        ? "Review your balance, then confirm to pay instantly."
+                        : isManualPayment
+                          ? requiresProof
+                            ? "Send the exact total, then attach your payment receipt."
+                            : "Send the exact total, then create the order. No receipt needed."
                           : "This payment method is unavailable."}
                     </p>
                   </div>
                 </div>
               </div>
-              {isEzcash ? (
+              {isManualPayment ? (
                 <div className="checkout-payment-proof">
                   {paymentConfigured ? (
                     <>
                       <div className="ezcash-payment-instructions">
                         <div className="ezcash-instruction-header">
                           <div className="ezcash-logo-wrapper">
-                            <img src={ezcashLogo} alt="eZ Cash" className="ezcash-logo" />
+                            {selectedPayment?.logoUrl ? (
+                              <img
+                                src={selectedPayment.logoUrl}
+                                alt={selectedPayment.name}
+                                className="ezcash-logo"
+                              />
+                            ) : isEzcash ? (
+                              <img src={ezcashLogo} alt="eZ Cash" className="ezcash-logo" />
+                            ) : (
+                              <span className="payment-brand-badge">
+                                {selectedPayment?.short || "PAY"}
+                              </span>
+                            )}
                           </div>
                           <div className="ezcash-instruction-title">
                             <span className="eyebrow">Payment Details</span>
@@ -853,109 +983,111 @@ function CheckoutPage() {
                             <span className="ezcash-detail-value">{priceLabel}</span>
                           </div>
                           <div className="ezcash-detail-item">
-                            <span className="ezcash-detail-label">eZ Cash Number</span>
-                            <span className="ezcash-detail-value">
-                              {storeSettings?.paymentEzcashNumber}
+                            <span className="ezcash-detail-label">
+                              {selectedPayment?.name ?? "Payment"} number
                             </span>
+                            <span className="ezcash-detail-value">{paymentAccountNumber}</span>
                           </div>
                           <div className="ezcash-detail-item">
                             <span className="ezcash-detail-label">Account Name</span>
-                            <span className="ezcash-detail-value">
-                              {storeSettings?.paymentEzcashName}
-                            </span>
+                            <span className="ezcash-detail-value">{paymentAccountName}</span>
                           </div>
                         </div>
                       </div>
-                      <div className="ezcash-upload-section">
-                        <div className="ezcash-upload-header">
-                          <span className="eyebrow">Payment Proof</span>
-                          <h4>Upload your receipt</h4>
-                          <p className="ezcash-upload-hint">
-                            Upload a screenshot or receipt. Your order remains unpaid until an
-                            administrator verifies the transfer. A proof image alone does not
-                            confirm payment or trigger delivery.
-                          </p>
-                        </div>
-                        <div
-                          className={`ezcash-upload-zone ${isDragging ? "dragging" : ""} ${proofFile ? "has-file" : ""}`}
-                          onDragOver={(e) => {
-                            e.preventDefault();
-                            setIsDragging(true);
-                          }}
-                          onDragLeave={(e) => {
-                            e.preventDefault();
-                            setIsDragging(false);
-                          }}
-                          onDrop={(e) => {
-                            e.preventDefault();
-                            setIsDragging(false);
-                            const file = e.dataTransfer.files?.[0] ?? null;
-                            handleFileSelect(file);
-                          }}
-                        >
-                          {proofFile ? (
-                            <div className="ezcash-file-preview">
-                              <div className="ezcash-file-info">
-                                <Upload size={24} className="ezcash-file-icon" />
-                                <div className="ezcash-file-details">
-                                  <span className="ezcash-file-name">{proofFile.name}</span>
-                                  <span className="ezcash-file-size">
-                                    {(proofFile.size / 1024 / 1024).toFixed(2)} MB
-                                  </span>
-                                </div>
-                              </div>
-                              <button
-                                type="button"
-                                className="ezcash-remove-file"
-                                onClick={() => {
-                                  setProofFile(null);
-                                  setProofUploadError(null);
-                                }}
-                                aria-label="Remove file"
-                              >
-                                <X size={16} />
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="ezcash-upload-content">
-                              <Upload size={32} className="ezcash-upload-icon" />
-                              <div className="ezcash-upload-text">
-                                <span className="ezcash-upload-primary">
-                                  Drag & drop your receipt here
-                                </span>
-                                <span className="ezcash-upload-secondary">or click to browse</span>
-                              </div>
-                              <span className="ezcash-upload-formats">
-                                JPEG, PNG, WebP, or PDF (max 5 MB)
-                              </span>
-                            </div>
-                          )}
-                          <input
-                            type="file"
-                            accept="image/jpeg,image/png,image/webp,application/pdf"
-                            className="ezcash-hidden-input"
-                            onChange={(event) => {
-                              const file = event.currentTarget.files?.[0] ?? null;
+                      {requiresProof && (
+                        <div className="ezcash-upload-section">
+                          <div className="ezcash-upload-header">
+                            <span className="eyebrow">Payment Proof</span>
+                            <h4>Upload your receipt</h4>
+                            <p className="ezcash-upload-hint">
+                              Upload a screenshot or receipt. Your order remains unpaid until an
+                              administrator verifies the transfer. A proof image alone does not
+                              confirm payment or trigger delivery.
+                            </p>
+                          </div>
+                          <div
+                            className={`ezcash-upload-zone ${isDragging ? "dragging" : ""} ${proofFile ? "has-file" : ""}`}
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              setIsDragging(true);
+                            }}
+                            onDragLeave={(e) => {
+                              e.preventDefault();
+                              setIsDragging(false);
+                            }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              setIsDragging(false);
+                              const file = e.dataTransfer.files?.[0] ?? null;
                               handleFileSelect(file);
                             }}
-                            disabled={proofUploading}
-                          />
+                          >
+                            {proofFile ? (
+                              <div className="ezcash-file-preview">
+                                <div className="ezcash-file-info">
+                                  <Upload size={24} className="ezcash-file-icon" />
+                                  <div className="ezcash-file-details">
+                                    <span className="ezcash-file-name">{proofFile.name}</span>
+                                    <span className="ezcash-file-size">
+                                      {(proofFile.size / 1024 / 1024).toFixed(2)} MB
+                                    </span>
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  className="ezcash-remove-file"
+                                  onClick={() => {
+                                    setProofFile(null);
+                                    setProofUploadError(null);
+                                  }}
+                                  aria-label="Remove file"
+                                >
+                                  <X size={16} />
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="ezcash-upload-content">
+                                <Upload size={32} className="ezcash-upload-icon" />
+                                <div className="ezcash-upload-text">
+                                  <span className="ezcash-upload-primary">
+                                    Drag & drop your receipt here
+                                  </span>
+                                  <span className="ezcash-upload-secondary">
+                                    or click to browse
+                                  </span>
+                                </div>
+                                <span className="ezcash-upload-formats">
+                                  JPEG, PNG, WebP, or PDF (max 5 MB)
+                                </span>
+                              </div>
+                            )}
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp,application/pdf"
+                              className="ezcash-hidden-input"
+                              onChange={(event) => {
+                                const file = event.currentTarget.files?.[0] ?? null;
+                                handleFileSelect(file);
+                              }}
+                              disabled={proofUploading}
+                            />
+                          </div>
+                          {proofUploadError && (
+                            <p className="ezcash-upload-error" role="alert">
+                              {proofUploadError}
+                            </p>
+                          )}
                         </div>
-                        {proofUploadError && (
-                          <p className="ezcash-upload-error" role="alert">
-                            {proofUploadError}
-                          </p>
-                        )}
-                      </div>
+                      )}
                     </>
                   ) : (
                     <p className="form-hint" role="alert">
-                      eZ Cash payment instructions are not configured yet. Please contact the store
-                      before sending money.
+                      {selectedPayment?.name ?? "This payment method"} instructions are not
+                      configured yet. Please contact the store before sending money.
                     </p>
                   )}
                 </div>
-              ) : selectedPayment?.id === "wallet" ? (
+              ) : isWalletPayment ? (
                 <div
                   className="checkout-wallet-panel"
                   role={walletBalanceQuery.isError ? "alert" : "status"}
@@ -1081,12 +1213,12 @@ function CheckoutPage() {
                   missingDetails ||
                   !uid ||
                   !paymentMethodActive ||
-                  (paymentMethod === "wallet" &&
+                  (isWalletPayment &&
                     (walletBalanceQuery.isLoading ||
                       walletBalanceQuery.isError ||
                       walletBalanceQuery.data === undefined ||
                       walletBalanceQuery.data < pricePkr)) ||
-                  (isEzcash && (!paymentConfigured || !proofFile))
+                  (isManualPayment && (!paymentConfigured || (requiresProof && !proofFile)))
                 }
               >
                 {processingOrder ? (
@@ -1099,8 +1231,10 @@ function CheckoutPage() {
                       ? "Checking account…"
                       : !uid
                         ? "Sign in to continue"
-                        : isEzcash
-                          ? "Create order & submit proof"
+                        : isManualPayment
+                          ? requiresProof
+                            ? "Create order & submit proof"
+                            : "Create order"
                           : `Pay ${priceLabel} from wallet`}{" "}
                     <ArrowRight size={16} />
                   </>
@@ -1157,11 +1291,16 @@ function CheckoutPage() {
               summary={waitSummary}
               status={completedOrder?.nexauraStatus}
               note={completedOrder?.nexauraNote}
+              issueType={completedOrder?.nexauraIssueType}
               providerOrderId={completedOrder?.nexauraProviderOrderId}
               pollError={completedOrder?.nexauraPollError}
               elapsedSeconds={nexauraWaitSeconds}
               copied={copiedId}
               onCopyOrderId={() => void handleCopyOrderId()}
+              onViewDashboard={() => {
+                setCompletedOrder(null);
+                navigate({ to: "/dashboard/orders" });
+              }}
             />
           ) : completedOrder ? (
             <div className="receipt-sheet">
@@ -1186,14 +1325,17 @@ function CheckoutPage() {
                       ? "Your order was created, but payment proof was not saved. Retry the upload to submit it."
                       : completedOrder.paymentStatus === "paid"
                         ? receiptTone === "success"
-                          ? "Nexaura confirms that your top-up is complete."
+                          ? "Your top-up has been delivered successfully to your game account."
                           : receiptTone === "error"
-                            ? "Nexaura could not complete this top-up. Contact support with your order number."
+                            ? "Automatic delivery encountered an issue. Our support team is completing your order."
                             : receiptTone === "refund"
-                              ? "Nexaura reports that this provider order was refunded. Contact support about your store payment."
-                              : completedOrder.nexauraMessage
-                                ? `Your payment was received, but automatic top-up needs attention: ${completedOrder.nexauraMessage}`
-                                : "Your wallet payment was received. Your order is now processing."
+                              ? "This order was cancelled and refunded back to your wallet. Contact support if you need assistance."
+                              : completedOrder.nexauraMessage &&
+                                  !/insufficient|balance|credit|402|nexaura|reseller/i.test(
+                                    completedOrder.nexauraMessage,
+                                  )
+                                ? `Your payment was received. Order note: ${completedOrder.nexauraMessage}`
+                                : "Your wallet payment was received. Your order is being fulfilled."
                         : "Your order was created. Payment is not confirmed until an administrator reviews your proof."}
                 </DialogDescription>
                 <p className="form-hint">
@@ -1201,8 +1343,13 @@ function CheckoutPage() {
                 </p>
                 {completedOrder.nexauraStatus && (
                   <p className="form-hint">
-                    Nexaura: {receiptLabel}
-                    {completedOrder.nexauraNote ? ` · ${completedOrder.nexauraNote}` : ""}
+                    Delivery status: {receiptLabel}
+                    {completedOrder.nexauraNote &&
+                    !/insufficient|balance|credit|402|nexaura|reseller/i.test(
+                      completedOrder.nexauraNote,
+                    )
+                      ? ` · ${completedOrder.nexauraNote}`
+                      : ""}
                   </p>
                 )}
               </div>
@@ -1240,7 +1387,7 @@ function CheckoutPage() {
                   <div>
                     <dt>Payment</dt>
                     <dd>
-                      {completedOrder.paymentMethod === "ezcash"
+                      {completedOrder.paymentMethod !== "wallet"
                         ? completedOrder.paymentStatus === "proof_submitted"
                           ? "Proof submitted · awaiting review"
                           : "Proof not submitted"
@@ -1250,7 +1397,7 @@ function CheckoutPage() {
                             : receiptTone === "error"
                               ? "Paid from wallet · top-up failed"
                               : receiptTone === "refund"
-                                ? "Paid from wallet · provider refunded"
+                                ? "Paid from wallet · refunded"
                                 : "Paid from wallet · check order status"
                           : "Unpaid"}
                     </dd>

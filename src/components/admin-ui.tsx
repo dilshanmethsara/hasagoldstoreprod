@@ -34,29 +34,38 @@ import { getFirebaseAuth } from "@/lib/firebase";
 import { useAccount } from "@/components/account-context";
 import { useGames } from "@/lib/firestore";
 import {
-  adjustAdminUserWallet,
-  archiveAdminRecord,
-  getAdminOverview,
-  listAdminRecords,
-  listAdminUsers,
-  listNexauraFailures,
-  searchAdminOrder,
-  searchAdminUser,
-  getAdminOrderProofUrl,
-  signInWithAdminPassword,
-  saveAdminRecord,
-  saveAdminPaymentMethods,
-  updateAdminOrderStatus,
-  setAdminUserDisabled,
-  verifyAdminAccess,
-} from "@/api/admin";
+  fetchAdminOverview,
+  fetchAdminCollection,
+  saveAdminCatalogRecord,
+  archiveAdminCatalogRecord,
+  saveAdminSettings,
+  saveAdminPaymentMethods as saveAdminPaymentMethodsApi,
+  saveAdminFaqs,
+  fetchAdminUsers,
+  searchAdminUserApi,
+  setAdminUserDisabledApi,
+  adjustAdminWalletApi,
+  searchAdminOrderApi,
+  updateAdminOrderStatusApi,
+  fetchAdminOrderProofUrl,
+  uploadAdminImageApi,
+  adminDecidePayment,
+  fetchAdminTopupFailures,
+  fetchApiCatalog,
+  fetchApiFaqs,
+} from "@/lib/api-client";
+import { signInWithAdminPassword } from "@/api/admin";
 import type { AdminDocument } from "@/api/admin";
 import { Button } from "@/components/ui/button";
 import hasaLogo from "@/assets/newhasalogo.png";
 import type { OrderStatus, PaymentStatus } from "@/lib/firestore-schema";
 import type { PaymentMethodConfig } from "@/lib/firestore-schema";
-import { PRODUCT_CATEGORIES } from "@/lib/firestore-schema";
-import { DEFAULT_PAYMENT_METHODS, parsePaymentMethods } from "@/lib/payment-methods";
+import { PRODUCT_CATEGORIES, getCategoriesForGame } from "@/lib/firestore-schema";
+import {
+  DEFAULT_PAYMENT_METHODS,
+  PAYMENT_METHOD_ID_PATTERN,
+  parsePaymentMethods,
+} from "@/lib/payment-methods";
 
 type AdminRecord = Partial<AdminDocument>;
 type AdminSection = "games" | "products" | "gameAccounts" | "orders" | "wallet_deposits";
@@ -379,11 +388,16 @@ function AdminProductGroups({
               </Button>
             )}
           </header>
-          {PRODUCT_CATEGORIES.map((category) => {
+          {getCategoriesForGame(slug).map((category) => {
             const categoryProducts = products.filter(
               (product) =>
-                (product["category"] === undefined ? "diamonds" : product["category"]) ===
-                category.id,
+                (product["category"] === undefined
+                  ? slug === "blood-strike"
+                    ? "gold"
+                    : slug === "pubg-mobile"
+                      ? "uc"
+                      : "diamonds"
+                  : product["category"]) === category.id,
             );
             if (categoryProducts.length === 0) return null;
             return (
@@ -429,6 +443,7 @@ function AdminDataPage({
   const [packageQuery, setPackageQuery] = useState("");
   const [packageStatus, setPackageStatus] = useState<"all" | "active" | "archived">("all");
   const [formError, setFormError] = useState<string | null>(null);
+  const [imageUploading, setImageUploading] = useState(false);
   const { data: catalogGames = [] } = useGames();
 
   const load = useCallback(
@@ -440,10 +455,11 @@ function AdminDataPage({
         setNextPageToken(null);
       }
       try {
-        const user = requireAdminSessionUser(uid);
-        const idToken = await user.getIdToken();
-        const result = await listAdminRecords({ data: { idToken, collection, pageToken } });
-        setRecords((current) => (append ? [...current, ...result.items] : result.items));
+        const result = await fetchAdminCollection(collection, pageToken);
+        setRecords(
+          (current) =>
+            (append ? [...current, ...result.items] : result.items) as unknown as AdminRecord[],
+        );
         setNextPageToken(result.nextPageToken);
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "Admin data could not be loaded.");
@@ -486,6 +502,51 @@ function AdminDataPage({
     setFormError(null);
   }
 
+  async function handleImageFileSelected(file: File) {
+    if (!file) return;
+    const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+    if (!allowed.includes(file.type)) {
+      setFormError("Please select an image file (PNG, JPG, WEBP, or GIF).");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setFormError("Image file size must be less than 5MB.");
+      return;
+    }
+    setImageUploading(true);
+    setFormError(null);
+    try {
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve, reject) => {
+        reader.onload = () => {
+          const res = reader.result as string;
+          const commaIdx = res.indexOf(",");
+          resolve(commaIdx !== -1 ? res.slice(commaIdx + 1) : res);
+        };
+        reader.onerror = () => reject(new Error("Could not read image file."));
+      });
+      reader.readAsDataURL(file);
+      const dataBase64 = await base64Promise;
+
+      const folder = collection === "games" ? "games" : "packages";
+      const { url } = await uploadAdminImageApi({
+        folder,
+        fileName: file.name,
+        contentType: file.type,
+        dataBase64,
+      });
+
+      updateField("imageUrl", url);
+      toast.success("Image uploaded successfully!");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to upload image.";
+      setFormError(msg);
+      toast.error(msg);
+    } finally {
+      setImageUploading(false);
+    }
+  }
+
   async function save() {
     if (collection === "orders" || collection === "wallet_deposits") {
       setError("Order and deposit records are read-only.");
@@ -524,6 +585,7 @@ function AdminDataPage({
             tone: formText(form, "tone"),
             icon: formText(form, "icon"),
             artworkKey: formText(form, "artworkKey"),
+            imageUrl: formText(form, "imageUrl") || null,
             description: formText(form, "description"),
             serverOptions: splitFormLines(formText(form, "serverOptions")),
             ...common,
@@ -539,6 +601,7 @@ function AdminDataPage({
               amount: formNumber(form, "amount") > 0 ? formNumber(form, "amount") : 1,
               unitLabel: formText(form, "unitLabel"),
               name: formText(form, "name"),
+              imageUrl: formText(form, "imageUrl") || null,
               priceUsd: Number.isFinite(formNumber(form, "priceUsd"))
                 ? formNumber(form, "priceUsd")
                 : 0,
@@ -581,10 +644,10 @@ function AdminDataPage({
     setSaving(true);
     setError(null);
     try {
-      const user = requireAdminSessionUser(uid);
-      await saveAdminRecord({
-        data: { idToken: await user.getIdToken(), collection, record },
-      });
+      await saveAdminCatalogRecord(
+        collection as "games" | "products" | "gameAccounts",
+        record as Record<string, unknown>,
+      );
       if (collection === "products") {
         await queryClient.invalidateQueries({ queryKey: ["products"] });
       }
@@ -608,10 +671,10 @@ function AdminDataPage({
       return;
     }
     try {
-      const user = requireAdminSessionUser(uid);
-      await archiveAdminRecord({
-        data: { idToken: await user.getIdToken(), collection, id: record.id },
-      });
+      await archiveAdminCatalogRecord(
+        collection as "games" | "products" | "gameAccounts",
+        record.id,
+      );
       if (collection === "products") {
         await queryClient.invalidateQueries({ queryKey: ["products"] });
       }
@@ -1059,9 +1122,25 @@ function AdminDataPage({
                     {selected ? `ID · ${formText(form, "id")}` : "Not saved yet"}
                   </span>
                 </div>
-                <strong className={formText(form, "name").trim() ? undefined : "is-placeholder"}>
-                  {formText(form, "name").trim() || "Package name"}
-                </strong>
+                <div
+                  style={{ display: "flex", alignItems: "center", gap: "12px", margin: "8px 0" }}
+                >
+                  {formText(form, "imageUrl") && (
+                    <img
+                      src={formText(form, "imageUrl")}
+                      alt=""
+                      style={{
+                        width: "36px",
+                        height: "36px",
+                        objectFit: "contain",
+                        borderRadius: "6px",
+                      }}
+                    />
+                  )}
+                  <strong className={formText(form, "name").trim() ? undefined : "is-placeholder"}>
+                    {formText(form, "name").trim() || "Package name"}
+                  </strong>
+                </div>
                 <div className="admin-package-preview-foot">
                   <span className="admin-package-preview-price">
                     <small>LKR</small> {formatAmount(formText(form, "pricePkr"))}
@@ -1096,11 +1175,50 @@ function AdminDataPage({
                       "Use lowercase letters, numbers, and hyphens.",
                     )}
                     {textField("currency", "Top-up currency", "e.g. Diamonds")}
+                    <FormField
+                      label="Game Icon / Logo Image"
+                      hint="Upload a custom game icon or artwork. Automatically hosted on CDN."
+                    >
+                      <div className="admin-image-upload-box">
+                        {formText(form, "imageUrl") && (
+                          <div className="admin-image-preview">
+                            <img
+                              src={formText(form, "imageUrl")}
+                              alt="Game Icon Preview"
+                              className="admin-preview-thumb"
+                            />
+                            <button
+                              type="button"
+                              className="admin-remove-image-btn"
+                              onClick={() => updateField("imageUrl", "")}
+                              title="Remove custom image"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        )}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          disabled={imageUploading}
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) void handleImageFileSelected(f);
+                          }}
+                          className="admin-file-input"
+                        />
+                        {imageUploading && (
+                          <span className="admin-uploading-indicator">
+                            <RefreshCw size={14} className="animate-spin" /> Uploading image…
+                          </span>
+                        )}
+                      </div>
+                    </FormField>
                     {textField(
                       "artworkKey",
-                      "Artwork key",
+                      "Artwork key (Fallback)",
                       "e.g. free-fire",
-                      "Matches an artwork asset configured in the storefront.",
+                      "Fallback key matches a built-in artwork asset if no custom upload is provided.",
                     )}
                   </>
                 ) : collection === "products" ? (
@@ -1111,6 +1229,45 @@ function AdminDataPage({
                       "e.g. Weekly Membership",
                       "Shown to customers on the game page and at checkout.",
                     )}
+                    <FormField
+                      label="Package Custom Icon / Artwork"
+                      hint="Upload a custom package icon. Shown directly on the game top-up card."
+                    >
+                      <div className="admin-image-upload-box">
+                        {formText(form, "imageUrl") && (
+                          <div className="admin-image-preview">
+                            <img
+                              src={formText(form, "imageUrl")}
+                              alt="Package Icon Preview"
+                              className="admin-preview-thumb"
+                            />
+                            <button
+                              type="button"
+                              className="admin-remove-image-btn"
+                              onClick={() => updateField("imageUrl", "")}
+                              title="Remove custom image"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        )}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          disabled={imageUploading}
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) void handleImageFileSelected(f);
+                          }}
+                          className="admin-file-input"
+                        />
+                        {imageUploading && (
+                          <span className="admin-uploading-indicator">
+                            <RefreshCw size={14} className="animate-spin" /> Uploading image…
+                          </span>
+                        )}
+                      </div>
+                    </FormField>
                     {packageGameLocked ? (
                       <FormField label="Game" hint="This package belongs to the selected game.">
                         <input
@@ -1133,7 +1290,10 @@ function AdminDataPage({
                     {selectField(
                       "category",
                       "Package category",
-                      PRODUCT_CATEGORIES.map(({ id, label }) => [id, label]),
+                      getCategoriesForGame(formText(form, "gameSlug")).map(({ id, label }) => [
+                        id,
+                        label,
+                      ]),
                     )}
                     {textField(
                       "unitLabel",
@@ -1375,14 +1535,13 @@ function OverviewContent() {
     setLoading(true);
     setError(null);
     try {
-      const user = requireAdminSessionUser(uid);
-      setStats(await getAdminOverview({ data: { idToken: await user.getIdToken() } }));
+      setStats((await fetchAdminOverview()) as unknown as Record<string, number>);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Overview could not be loaded.");
     } finally {
       setLoading(false);
     }
-  }, [ready, uid]);
+  }, [ready]);
   useEffect(() => {
     void load();
   }, [load]);
@@ -1527,10 +1686,7 @@ function AdminUsersPage() {
         setUserSearchActive(false);
       }
       try {
-        const user = requireAdminSessionUser(uid);
-        const result = await listAdminUsers({
-          data: { idToken: await user.getIdToken(), pageToken },
-        });
+        const result = await fetchAdminUsers(pageToken);
         setUsers((current) => (append ? [...current, ...result.users] : result.users));
         setNextPageToken(result.nextPageToken);
       } catch (cause) {
@@ -1539,7 +1695,7 @@ function AdminUsersPage() {
         setLoading(false);
       }
     },
-    [ready, uid],
+    [ready],
   );
   useEffect(() => {
     void load();
@@ -1557,10 +1713,7 @@ function AdminUsersPage() {
     setNextPageToken(null);
     setUserSearchActive(true);
     try {
-      const current = requireAdminSessionUser(uid);
-      const result = await searchAdminUser({
-        data: { idToken: await current.getIdToken(), userId: value },
-      });
+      const result = await searchAdminUserApi(value);
       setUsers(result.user ? [result.user] : []);
     } catch (cause) {
       setUsers([]);
@@ -1581,14 +1734,7 @@ function AdminUsersPage() {
       return;
     }
     try {
-      const current = requireAdminSessionUser(uid);
-      await setAdminUserDisabled({
-        data: {
-          idToken: await current.getIdToken(),
-          uid: target.uid,
-          disabled: !target.disabled,
-        },
-      });
+      await setAdminUserDisabledApi(target.uid, !target.disabled);
       toast.success(target.disabled ? "Customer account enabled." : "Customer account disabled.");
       await load();
     } catch (cause) {
@@ -1604,15 +1750,10 @@ function AdminUsersPage() {
     setError(null);
     setAdjustmentSaving(true);
     try {
-      const current = requireAdminSessionUser(uid);
-      await adjustAdminUserWallet({
-        data: {
-          idToken: await current.getIdToken(),
-          uid: target.uid,
-          direction: adjustmentDirection,
-          amountLkr: Number(adjustmentAmount),
-          reason: adjustmentReason,
-        },
+      await adjustAdminWalletApi(target.uid, {
+        direction: adjustmentDirection,
+        amountLkr: Number(adjustmentAmount),
+        reason: adjustmentReason,
       });
       toast.success(
         adjustmentDirection === "credit" ? "Wallet balance credited." : "Wallet balance deducted.",
@@ -2129,16 +2270,16 @@ function AdminOrdersPage() {
         setOrderSearchActive(false);
       }
       try {
-        const currentUser = requireAdminSessionUser(uid);
-        const result = await listAdminRecords({
-          data: { idToken: await currentUser.getIdToken(), collection: "orders", pageToken },
-        });
-        setOrders((current) => (append ? [...current, ...result.items] : result.items));
+        const result = await fetchAdminCollection("orders", pageToken);
+        setOrders(
+          (current) =>
+            (append ? [...current, ...result.items] : result.items) as unknown as AdminDocument[],
+        );
         setDrafts((current) => ({
           ...(append ? current : {}),
           ...Object.fromEntries(
             result.items.map((order) => [
-              order.id,
+              order["id"],
               {
                 status: isOrderStatus(order["status"]) ? order["status"] : "pending",
                 paymentStatus: isPaymentStatus(order["paymentStatus"])
@@ -2174,17 +2315,14 @@ function AdminOrdersPage() {
     setNextPageToken(null);
     setOrderSearchActive(true);
     try {
-      const currentUser = requireAdminSessionUser(uid);
-      const result = await searchAdminOrder({
-        data: { idToken: await currentUser.getIdToken(), orderId: value },
-      });
-      const found = result.order ? [result.order] : [];
+      const result = await searchAdminOrderApi(value);
+      const found = result.order ? [result.order as unknown as AdminDocument] : [];
       setOrders(found);
       setDrafts((current) => ({
         ...current,
         ...Object.fromEntries(
           found.map((order) => [
-            order.id,
+            order["id"],
             {
               status: isOrderStatus(order["status"]) ? order["status"] : "pending",
               paymentStatus: isPaymentStatus(order["paymentStatus"])
@@ -2217,10 +2355,13 @@ function AdminOrdersPage() {
     setSavingId(orderId);
     setError(null);
     try {
-      const currentUser = requireAdminSessionUser(uid);
-      const result = await updateAdminOrderStatus({
-        data: { idToken: await currentUser.getIdToken(), orderId, ...draft },
-      });
+      const result = (await updateAdminOrderStatusApi(orderId, draft)) as {
+        orderId: string;
+        status: string;
+        paymentStatus: string;
+        emailNotificationSent: boolean;
+        emailNotificationAttempted?: boolean;
+      };
       setOrders((current) =>
         current.map((order) =>
           order.id === orderId
@@ -2228,47 +2369,25 @@ function AdminOrdersPage() {
                 ...order,
                 status: draft.status,
                 paymentStatus: draft.paymentStatus,
-                ...(result.nexauraSubmission
-                  ? {
-                      nexauraStatus: result.nexauraSubmission.status,
-                      ...(result.nexauraSubmission.orderId
-                        ? { nexauraOrderId: result.nexauraSubmission.orderId }
-                        : {}),
-                      ...(result.nexauraSubmission.message
-                        ? { nexauraLastError: result.nexauraSubmission.message }
-                        : {}),
-                    }
-                  : {}),
               }
             : order,
         ),
       );
+      setDrafts((current) => ({
+        ...current,
+        [orderId]: {
+          status: draft.status,
+          paymentStatus: draft.paymentStatus,
+        },
+      }));
+      toast.success("Order status updated successfully.");
       if (result.emailNotificationSent) {
-        toast.success("Order status updated and customer emailed.");
-      } else if (result.emailNotificationAttempted) {
-        toast.success("Order status updated.", {
-          description: "Customer email was not sent. Check server configuration and logs.",
-        });
-      } else {
-        toast.success("Order status unchanged.");
-      }
-      if (result.nexauraSubmission?.status === "submission_failed") {
-        toast.error("Nexaura top-up was not submitted", {
-          description: result.nexauraSubmission.message,
-        });
-      } else if (result.nexauraSubmission?.status === "submission_unknown") {
-        toast.error("Nexaura submission status is unknown", {
-          description:
-            result.nexauraSubmission.message ??
-            "Retry by saving the paid status again; the same idempotency key will be reused.",
-        });
-      } else if (result.nexauraSubmission?.status === "processing") {
-        toast.info("Nexaura accepted the top-up", {
-          description: `Provider order ${result.nexauraSubmission.orderId} is processing.`,
-        });
+        toast.info("Customer notification email sent.");
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Order status could not be updated.");
+      const msg = cause instanceof Error ? cause.message : "Order status could not be updated.";
+      setError(msg);
+      toast.error(msg);
     } finally {
       setSavingId(null);
     }
@@ -2278,10 +2397,7 @@ function AdminOrdersPage() {
     setProofLoadingId(orderId);
     setError(null);
     try {
-      const currentUser = requireAdminSessionUser(uid);
-      const result = await getAdminOrderProofUrl({
-        data: { idToken: await currentUser.getIdToken(), orderId },
-      });
+      const result = await fetchAdminOrderProofUrl(orderId);
       setProofUrls((current) => ({ ...current, [orderId]: result.url }));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Payment proof could not be opened.");
@@ -2298,7 +2414,7 @@ function AdminOrdersPage() {
   return (
     <AdminShell
       title="Orders"
-      description="Review payment proofs and update order statuses. Marking a Free Fire order paid submits its configured package to Nexaura automatically."
+      description="Review payment proofs and manage order fulfillment statuses."
     >
       <section className="admin-panel admin-records-panel">
         <form className="admin-lookup-form" onSubmit={(event) => void searchOrder(event)}>
@@ -2555,11 +2671,8 @@ export function AdminTopupFailures() {
     setLoading(true);
     setError(null);
     try {
-      const currentUser = requireAdminSessionUser(uid);
-      const result = await listNexauraFailures({
-        data: { idToken: await currentUser.getIdToken() },
-      });
-      setItems(result.items);
+      const result = await fetchAdminTopupFailures();
+      setItems(result.items as unknown as AdminDocument[]);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Top-up failures could not be loaded.");
     } finally {
@@ -2790,10 +2903,23 @@ export function AdminSupport() {
 export function AdminSettings() {
   return <AdminSettingsPage mode="settings" />;
 }
+type EditablePaymentMethod = PaymentMethodConfig & { editKey: string };
+
+let paymentMethodKeySeed = 0;
+function nextPaymentMethodKey(): string {
+  paymentMethodKeySeed += 1;
+  return `payment-method-${paymentMethodKeySeed}`;
+}
+
+function toEditablePaymentMethods(methods: PaymentMethodConfig[]): EditablePaymentMethod[] {
+  return methods.map((method) => ({ ...method, editKey: nextPaymentMethodKey() }));
+}
+
 export function AdminPaymentMethods() {
   const { ready, uid } = useAccount();
-  const [methods, setMethods] = useState<PaymentMethodConfig[]>(
-    DEFAULT_PAYMENT_METHODS.map((method) => ({ ...method })),
+  const { data: catalogGames = [] } = useGames();
+  const [methods, setMethods] = useState<EditablePaymentMethod[]>(() =>
+    toEditablePaymentMethods(DEFAULT_PAYMENT_METHODS.map((method) => ({ ...method }))),
   );
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -2804,15 +2930,23 @@ export function AdminPaymentMethods() {
     setLoading(true);
     setError(null);
     try {
-      const user = requireAdminSessionUser(uid);
-      const idToken = await user.getIdToken();
-      await verifyAdminAccess({ data: { idToken } });
-      const { getDoc, doc, getFirestore } = await import("firebase/firestore");
-      const { getFirebaseApp } = await import("@/lib/firebase");
-      const snapshot = await getDoc(doc(getFirestore(getFirebaseApp()), "settings", "store"));
-      setMethods(
-        parsePaymentMethods(snapshot.exists() ? snapshot.data()["paymentMethods"] : undefined),
+      const { settings } = await fetchApiCatalog();
+      const legacyEzcashName =
+        typeof settings?.["paymentEzcashName"] === "string" ? settings["paymentEzcashName"] : "";
+      const legacyEzcashNumber =
+        typeof settings?.["paymentEzcashNumber"] === "string"
+          ? settings["paymentEzcashNumber"]
+          : "";
+      const parsed = parsePaymentMethods(settings?.["paymentMethods"]).map((method) =>
+        method.id === "ezcash"
+          ? {
+              ...method,
+              accountName: method.accountName?.trim() || legacyEzcashName,
+              accountNumber: method.accountNumber?.trim() || legacyEzcashNumber,
+            }
+          : method,
       );
+      setMethods(toEditablePaymentMethods(parsed));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Payment methods could not be loaded.");
     } finally {
@@ -2824,25 +2958,119 @@ export function AdminPaymentMethods() {
     void load();
   }, [load]);
 
-  function updateMethod(
-    id: PaymentMethodConfig["id"],
-    changes: Partial<Omit<PaymentMethodConfig, "id">>,
-  ) {
+  function updateMethod(editKey: string, changes: Partial<PaymentMethodConfig>) {
     setMethods((current) =>
-      current.map((method) => (method.id === id ? { ...method, ...changes } : method)),
+      current.map((method) => (method.editKey === editKey ? { ...method, ...changes } : method)),
+    );
+  }
+
+  function addMethod() {
+    setMethods((current) => {
+      const taken = new Set(current.map((method) => method.id));
+      let id = "new-method";
+      let suffix = 2;
+      while (taken.has(id)) id = `new-method-${suffix++}`;
+      return [
+        ...current,
+        {
+          id,
+          name: "New payment method",
+          sub: "Manual payment · proof required",
+          short: "NEW",
+          active: false,
+          kind: "manual",
+          requiresProof: true,
+          accountName: "",
+          accountNumber: "",
+          games: [],
+          editKey: nextPaymentMethodKey(),
+        },
+      ];
+    });
+  }
+
+  function removeMethod(editKey: string) {
+    setMethods((current) => current.filter((method) => method.editKey !== editKey));
+  }
+
+  function setAllGames(editKey: string, allGames: boolean) {
+    updateMethod(editKey, { games: allGames ? [] : catalogGames.map((game) => game.id) });
+  }
+
+  function toggleGameScope(editKey: string, gameId: string) {
+    setMethods((current) =>
+      current.map((method) => {
+        if (method.editKey !== editKey) return method;
+        const scoped = method.games ?? [];
+        return {
+          ...method,
+          games: scoped.includes(gameId)
+            ? scoped.filter((id) => id !== gameId)
+            : [...scoped, gameId],
+        };
+      }),
     );
   }
 
   async function save() {
     setError(null);
+    const prepared = methods.map((method) => {
+      const id = method.id.trim();
+      return {
+        id,
+        name: method.name.trim(),
+        sub: method.sub.trim(),
+        short: method.short.trim(),
+        active: method.active,
+        kind: id === "wallet" ? ("wallet" as const) : ("manual" as const),
+        // Wallet never takes a receipt; manual methods default to required so
+        // rows saved before this flag existed keep their current behaviour.
+        requiresProof: id === "wallet" ? false : method.requiresProof !== false,
+        logoUrl: method.logoUrl?.trim() ? method.logoUrl.trim() : null,
+        accountName: method.accountName?.trim() ?? "",
+        accountNumber: method.accountNumber?.trim() ?? "",
+        games: Array.from(new Set((method.games ?? []).map((game) => game.trim()).filter(Boolean))),
+      };
+    });
+
+    if (prepared.length === 0) {
+      setError("Add at least one payment method.");
+      return;
+    }
+    if (new Set(prepared.map((method) => method.id)).size !== prepared.length) {
+      setError("Each payment method needs a unique ID.");
+      return;
+    }
+    const invalidId = prepared.find((method) => !PAYMENT_METHOD_ID_PATTERN.test(method.id));
+    if (invalidId) {
+      setError(
+        `"${invalidId.id || "unnamed"}" is not a valid method ID. Use lowercase letters, numbers, dashes or underscores.`,
+      );
+      return;
+    }
+    const missingName = prepared.find((method) => !method.name);
+    if (missingName) {
+      setError("Every payment method needs a display name.");
+      return;
+    }
+    const incompleteManual = prepared.find(
+      (method) =>
+        method.kind === "manual" && method.active && (!method.accountName || !method.accountNumber),
+    );
+    if (incompleteManual) {
+      setError(
+        `"${incompleteManual.name}" needs an account name and number before it can be active.`,
+      );
+      return;
+    }
+
     setSaving(true);
     try {
-      const user = requireAdminSessionUser(uid);
-      await saveAdminPaymentMethods({
-        data: { idToken: await user.getIdToken(), methods },
-      });
+      await saveAdminPaymentMethodsApi(prepared as PaymentMethodConfig[]);
       toast.success("Payment methods saved.");
-      await load();
+      // Keep the editor on exactly what was just saved instead of refetching:
+      // a refetch could momentarily return stale data and silently drop methods.
+      setMethods(toEditablePaymentMethods(prepared));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Payment methods could not be saved.");
     } finally {
@@ -2853,7 +3081,7 @@ export function AdminPaymentMethods() {
   return (
     <AdminShell
       title="Payment methods"
-      description="Edit the payment options customers see at checkout."
+      description="Create payment options and choose which games each one applies to."
     >
       {error && (
         <p className="admin-error-banner" role="alert">
@@ -2874,57 +3102,206 @@ export function AdminPaymentMethods() {
             </span>
           </div>
           <p className="admin-helper-copy">
-            Only Wallet and eZ Cash are supported. Paused methods are hidden from new checkouts and
-            blocked by the order service. eZ Cash account details remain in Store Settings.
+            Wallet is built in. Manual methods (bank transfer, eZ Cash, and others) stay unpaid
+            until an administrator reviews the payment proof — switch off{" "}
+            <strong>Receipt required</strong> for a method that should not ask customers for a slip.
+            Leave “All games” checked to show a method on every game, or pick specific games. New
+            methods start <strong>paused</strong> — switch on “Active” before saving, otherwise the
+            games page will not show them.
           </p>
           <div className="admin-form-grid">
-            {methods.map((method) => (
-              <div className="admin-form-section" key={method.id}>
-                <h3>{method.id === "wallet" ? "Wallet" : "eZ Cash"}</h3>
-                <label className="admin-toggle-row">
-                  <input
-                    type="checkbox"
-                    checked={method.active}
-                    onChange={(event) => updateMethod(method.id, { active: event.target.checked })}
-                  />
-                  <span className="admin-toggle-copy">
-                    <strong>{method.active ? "Active" : "Paused"}</strong>
-                    <small>
-                      {method.active
-                        ? "Customers can choose this method."
-                        : "Hidden from checkout; new orders are blocked."}
-                    </small>
-                  </span>
-                </label>
-                <FormField label="Display name">
-                  <input
-                    className="admin-form-input"
-                    value={method.name}
-                    maxLength={100}
-                    onChange={(event) => updateMethod(method.id, { name: event.target.value })}
-                  />
-                </FormField>
-                <FormField label="Checkout description">
-                  <input
-                    className="admin-form-input"
-                    value={method.sub}
-                    maxLength={200}
-                    onChange={(event) => updateMethod(method.id, { sub: event.target.value })}
-                  />
-                </FormField>
-                <FormField label="Short label">
-                  <input
-                    className="admin-form-input"
-                    value={method.short}
-                    maxLength={10}
-                    onChange={(event) => updateMethod(method.id, { short: event.target.value })}
-                  />
-                </FormField>
-              </div>
-            ))}
+            {methods.map((method) => {
+              const isWallet = method.id === "wallet";
+              const isBuiltIn = isWallet || method.id === "ezcash";
+              const allGames = !method.games || method.games.length === 0;
+              return (
+                <div className="admin-form-section" key={method.editKey}>
+                  <div className="admin-payment-method-head">
+                    <div className="admin-payment-method-title">
+                      <h3>{method.name || method.id || "Untitled method"}</h3>
+                      <span
+                        className={`admin-method-status ${method.active ? "is-active" : "is-paused"}`}
+                      >
+                        {method.active ? "Active" : "Paused"}
+                      </span>
+                    </div>
+                    {!isWallet && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => removeMethod(method.editKey)}
+                      >
+                        <Trash2 size={14} /> Remove
+                      </Button>
+                    )}
+                  </div>
+                  <label className="admin-toggle-row">
+                    <input
+                      type="checkbox"
+                      checked={method.active}
+                      onChange={(event) =>
+                        updateMethod(method.editKey, { active: event.target.checked })
+                      }
+                    />
+                    <span className="admin-toggle-copy">
+                      <strong>{method.active ? "Active" : "Paused"}</strong>
+                      <small>
+                        {method.active
+                          ? "Customers can choose this method."
+                          : "Hidden from checkout; new orders are blocked."}
+                      </small>
+                    </span>
+                  </label>
+                  {!method.active && (
+                    <p className="admin-inline-note is-warning" role="status">
+                      This method is paused, so it will not appear on any games page or checkout
+                      until you switch it on and save.
+                    </p>
+                  )}
+                  {!isWallet && (
+                    <label className="admin-toggle-row">
+                      <input
+                        type="checkbox"
+                        checked={method.requiresProof !== false}
+                        onChange={(event) =>
+                          updateMethod(method.editKey, { requiresProof: event.target.checked })
+                        }
+                      />
+                      <span className="admin-toggle-copy">
+                        <strong>
+                          {method.requiresProof !== false
+                            ? "Receipt required"
+                            : "No receipt required"}
+                        </strong>
+                        <small>
+                          {method.requiresProof !== false
+                            ? "Customers upload a payment receipt; the order stays unpaid until you review it."
+                            : "No receipt upload. The order is created unpaid and you confirm it manually."}
+                        </small>
+                      </span>
+                    </label>
+                  )}
+                  <FormField label="Display name">
+                    <input
+                      className="admin-form-input"
+                      value={method.name}
+                      maxLength={100}
+                      onChange={(event) =>
+                        updateMethod(method.editKey, { name: event.target.value })
+                      }
+                    />
+                  </FormField>
+                  <FormField label="Checkout description">
+                    <input
+                      className="admin-form-input"
+                      value={method.sub}
+                      maxLength={200}
+                      onChange={(event) =>
+                        updateMethod(method.editKey, { sub: event.target.value })
+                      }
+                    />
+                  </FormField>
+                  <FormField label="Short label">
+                    <input
+                      className="admin-form-input"
+                      value={method.short}
+                      maxLength={10}
+                      onChange={(event) =>
+                        updateMethod(method.editKey, { short: event.target.value })
+                      }
+                    />
+                  </FormField>
+                  <FormField
+                    label="Method ID"
+                    hint={
+                      isBuiltIn
+                        ? "Built-in IDs cannot be changed."
+                        : "Lowercase letters, numbers, dashes or underscores."
+                    }
+                  >
+                    <input
+                      className="admin-form-input"
+                      value={method.id}
+                      maxLength={50}
+                      disabled={isBuiltIn}
+                      onChange={(event) => updateMethod(method.editKey, { id: event.target.value })}
+                    />
+                  </FormField>
+                  {!isWallet && (
+                    <>
+                      <FormField label="Account name" hint="Shown to customers at checkout.">
+                        <input
+                          className="admin-form-input"
+                          value={method.accountName ?? ""}
+                          maxLength={100}
+                          onChange={(event) =>
+                            updateMethod(method.editKey, { accountName: event.target.value })
+                          }
+                        />
+                      </FormField>
+                      <FormField
+                        label="Account / wallet number"
+                        hint="Where customers send the money."
+                      >
+                        <input
+                          className="admin-form-input"
+                          value={method.accountNumber ?? ""}
+                          maxLength={100}
+                          onChange={(event) =>
+                            updateMethod(method.editKey, { accountNumber: event.target.value })
+                          }
+                        />
+                      </FormField>
+                      <FormField label="Logo URL" hint="Optional. Blank shows the short label.">
+                        <input
+                          className="admin-form-input"
+                          value={method.logoUrl ?? ""}
+                          maxLength={1000}
+                          onChange={(event) =>
+                            updateMethod(method.editKey, { logoUrl: event.target.value })
+                          }
+                        />
+                      </FormField>
+                    </>
+                  )}
+                  <fieldset className="admin-games-scope">
+                    <legend>Available for games</legend>
+                    <label className="admin-toggle-row">
+                      <input
+                        type="checkbox"
+                        checked={allGames}
+                        onChange={(event) => setAllGames(method.editKey, event.target.checked)}
+                      />
+                      <span className="admin-toggle-copy">
+                        <strong>All games</strong>
+                        <small>Show this method on every game.</small>
+                      </span>
+                    </label>
+                    {!allGames && (
+                      <div className="admin-games-scope-grid">
+                        {catalogGames.map((game) => (
+                          <label key={game.id} className="admin-game-scope-option">
+                            <input
+                              type="checkbox"
+                              checked={method.games?.includes(game.id) ?? false}
+                              onChange={() => toggleGameScope(method.editKey, game.id)}
+                            />
+                            <span>{game.name}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </fieldset>
+                </div>
+              );
+            })}
           </div>
           <div className="admin-form-actions">
-            <Button onClick={() => void save()} disabled={saving}>
+            <Button type="button" variant="outline" onClick={addMethod}>
+              <Plus size={15} /> Add payment method
+            </Button>
+            <Button type="button" onClick={() => void save()} disabled={saving}>
               {saving ? "Saving…" : "Save payment methods"}
             </Button>
           </div>
@@ -2948,6 +3325,9 @@ const DEFAULT_SETTINGS = {
   currency: "LKR",
   bannerEnabled: false,
   maintenanceMode: false,
+  maintenanceTitle: "Under Scheduled Maintenance",
+  maintenanceMessage:
+    "We are performing routine server upgrades and catalog optimization to bring you faster delivery and improved services. We will be back online shortly!",
 };
 
 function AdminSettingsPage({ mode }: { mode: "settings" | "faqs" }) {
@@ -2964,41 +3344,26 @@ function AdminSettingsPage({ mode }: { mode: "settings" | "faqs" }) {
     setLoading(true);
     setError(null);
     try {
-      const user = requireAdminSessionUser(uid);
-      const idToken = await user.getIdToken();
-      await verifyAdminAccess({ data: { idToken } });
-      const { getDoc, doc, getFirestore } = await import("firebase/firestore");
-      const { getFirebaseApp } = await import("@/lib/firebase");
-      const id = mode === "faqs" ? "faqs" : "store";
-      const snapshot = await getDoc(doc(getFirestore(getFirebaseApp()), "settings", id));
-      if (snapshot.exists()) {
-        const current = snapshot.data();
-        if (mode === "faqs") {
-          const items = current["items"];
-          setFaqItems(
-            Array.isArray(items)
-              ? items
-                  .filter(
-                    (item): item is { question: string; answer: string } =>
-                      !!item &&
-                      typeof item === "object" &&
-                      "question" in item &&
-                      typeof item["question"] === "string" &&
-                      "answer" in item &&
-                      typeof item["answer"] === "string",
-                  )
-                  .map(({ question, answer }) => ({ question, answer }))
-              : [],
-          );
-        } else {
-          setForm(createFormState({ ...DEFAULT_SETTINGS, ...current }));
-        }
-      } else {
-        if (mode === "faqs") setFaqItems([]);
-        else {
-          setForm(createFormState(DEFAULT_SETTINGS));
-        }
+      if (mode === "faqs") {
+        const { items } = await fetchApiFaqs();
+        setFaqItems(
+          Array.isArray(items)
+            ? items.filter(
+                (item): item is { question: string; answer: string } =>
+                  !!item &&
+                  typeof item === "object" &&
+                  "question" in item &&
+                  typeof item["question"] === "string" &&
+                  "answer" in item &&
+                  typeof item["answer"] === "string",
+              )
+            : [],
+        );
+        return;
       }
+
+      const { settings } = await fetchApiCatalog();
+      setForm(createFormState({ ...DEFAULT_SETTINGS, ...(settings ?? {}) }));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Settings could not be loaded.");
     } finally {
@@ -3023,18 +3388,17 @@ function AdminSettingsPage({ mode }: { mode: "settings" | "faqs" }) {
             currency: "LKR",
             bannerEnabled: formBoolean(form, "bannerEnabled"),
             maintenanceMode: formBoolean(form, "maintenanceMode"),
+            maintenanceTitle: formText(form, "maintenanceTitle"),
+            maintenanceMessage: formText(form, "maintenanceMessage"),
           };
     setError(null);
     setSaving(true);
     try {
-      const user = requireAdminSessionUser(uid);
-      await saveAdminRecord({
-        data: {
-          idToken: await user.getIdToken(),
-          collection,
-          record,
-        },
-      });
+      if (mode === "faqs") {
+        await saveAdminFaqs(faqItems);
+      } else {
+        await saveAdminSettings(record as Record<string, unknown>);
+      }
       toast.success(mode === "faqs" ? "FAQs saved." : "Store settings saved.");
       await load();
     } catch (cause) {
@@ -3091,8 +3455,8 @@ function AdminSettingsPage({ mode }: { mode: "settings" | "faqs" }) {
               <div className="admin-form-section">
                 <h3>Manual payment details</h3>
                 <p className="admin-helper-copy">
-                  Customers see these Firestore-backed details for eZ Cash and upload proof for
-                  administrator review.
+                  Default eZ Cash account shown at checkout. Customers upload a receipt for
+                  administrator review when the method requires one.
                 </p>
                 <div className="admin-form-grid">
                   <FormField label="eZ Cash mobile number">
@@ -3171,10 +3535,44 @@ function AdminSettingsPage({ mode }: { mode: "settings" | "faqs" }) {
                   />
                   <span className="admin-toggle-copy">
                     <strong>Maintenance mode</strong>
-                    <small>Temporarily blocks new orders from being created.</small>
+                    <small>
+                      Replaces the public storefront with the high-tech maintenance screen.
+                    </small>
                   </span>
                 </label>
               </div>
+
+              {formBoolean(form, "maintenanceMode") && (
+                <div className="admin-form-section" style={{ borderLeft: "3px solid #f59e0b" }}>
+                  <h3>Maintenance screen details</h3>
+                  <p className="admin-helper-copy">
+                    Customize the message visitors see when maintenance mode is active.
+                  </p>
+                  <div className="admin-form-grid">
+                    <FormField label="Headline / Title">
+                      <input
+                        className="admin-form-input"
+                        value={formText(form, "maintenanceTitle")}
+                        onChange={(event) => updateSetting("maintenanceTitle", event.target.value)}
+                        placeholder="e.g. Under Scheduled Maintenance"
+                      />
+                    </FormField>
+                    <div className="admin-form-span">
+                      <FormField label="Announcement Message">
+                        <textarea
+                          className="admin-form-textarea"
+                          rows={3}
+                          value={formText(form, "maintenanceMessage")}
+                          onChange={(event) =>
+                            updateSetting("maintenanceMessage", event.target.value)
+                          }
+                          placeholder="e.g. We are performing server upgrades to bring you faster delivery and improved services. We will be back online shortly!"
+                        />
+                      </FormField>
+                    </div>
+                  </div>
+                </div>
+              )}
             </>
           ) : (
             <div className="admin-faq-editor">

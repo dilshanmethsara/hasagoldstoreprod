@@ -17,7 +17,7 @@ type OrderConfirmation = {
   playerId: string;
   server: string;
   totalLkr: number;
-  paymentMethod: "wallet" | "ezcash";
+  paymentMethod: string;
 };
 
 type OrderStatusUpdate = {

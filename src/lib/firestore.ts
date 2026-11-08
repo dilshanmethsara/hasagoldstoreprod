@@ -1,31 +1,24 @@
+/**
+ * Data access layer — ALL reads now go through the Express API.
+ * No direct Firestore client access remains in this module.
+ */
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  orderBy,
-  query,
-  where,
-  runTransaction,
-  updateDoc,
-  getFirestore,
-  onSnapshot,
-  limit,
-  startAfter,
-  type DocumentData,
-  type QueryDocumentSnapshot,
-} from "firebase/firestore";
+  fetchApiCatalog,
+  fetchApiAccounts,
+  fetchApiAccount,
+  fetchApiFaqs,
+  getApiWallet,
+  ensureApiProfile,
+  updateApiProfile,
+} from "@/lib/api-client";
 
-import { FirebaseSetupError, getFirebaseApp, isFirebaseConfigured } from "@/lib/firebase";
 import type {
   CatalogGame,
   GameAccountDoc,
-  GameDoc,
   OrderDoc,
   ProductDoc,
   SettingsDoc,
-  ThemeChoice,
   UserDoc,
   WalletAdjustmentDoc,
   WalletDepositDoc,
@@ -60,17 +53,6 @@ export function resolveArtwork(key: string): string {
   return artworkMap[key] ?? "";
 }
 
-function toMs(value: unknown): number | null {
-  if (value == null) return null;
-  if (typeof value === "number") return value;
-  const v = value as { toMillis?: () => number };
-  return typeof v.toMillis === "function" ? v.toMillis() : null;
-}
-
-function getDb() {
-  return getFirestore(getFirebaseApp());
-}
-
 function getServerOptions(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter(
@@ -79,13 +61,24 @@ function getServerOptions(value: unknown): string[] {
   );
 }
 
+function getProductCategory(value: unknown): ProductDoc["category"] {
+  return value === "diamonds" ||
+    value === "memberships" ||
+    value === "level-up-passes" ||
+    value === "evo-access" ||
+    value === "gold" ||
+    value === "passes" ||
+    value === "uc"
+    ? value
+    : undefined;
+}
+
 // ─── Games ───────────────────────────────────────────────────────────────────
 
 export async function fetchGames(): Promise<CatalogGame[]> {
-  const snap = await getDocs(query(collection(getDb(), "games"), where("active", "==", true)));
-  const docs = snap.docs.map((d) => {
-    const data = d.data() as GameDoc;
-    const image = resolveArtwork(data.artworkKey);
+  const catalog = await fetchApiCatalog();
+  const docs = catalog.games.map((data) => {
+    const image = data.imageUrl?.trim() || resolveArtwork(data.artworkKey);
     return {
       id: data.slug,
       name: data.name,
@@ -95,6 +88,7 @@ export async function fetchGames(): Promise<CatalogGame[]> {
       image,
       logo: image,
       artworkKey: data.artworkKey,
+      imageUrl: data.imageUrl ?? null,
       description: data.description,
       serverOptions: getServerOptions(data.serverOptions),
       active: data.active,
@@ -105,11 +99,10 @@ export async function fetchGames(): Promise<CatalogGame[]> {
 }
 
 export async function fetchGame(slug: string): Promise<CatalogGame | null> {
-  const snap = await getDoc(doc(getDb(), "games", slug));
-  if (!snap.exists()) return null;
-  const data = snap.data() as GameDoc;
-  if (!data.active) return null;
-  const image = resolveArtwork(data.artworkKey);
+  const catalog = await fetchApiCatalog();
+  const data = catalog.games.find((game) => game.slug === slug);
+  if (!data) return null;
+  const image = data.imageUrl?.trim() || resolveArtwork(data.artworkKey);
   return {
     id: data.slug,
     name: data.name,
@@ -119,6 +112,7 @@ export async function fetchGame(slug: string): Promise<CatalogGame | null> {
     image,
     logo: image,
     artworkKey: data.artworkKey,
+    imageUrl: data.imageUrl ?? null,
     description: data.description,
     serverOptions: getServerOptions(data.serverOptions),
     active: data.active,
@@ -129,41 +123,38 @@ export async function fetchGame(slug: string): Promise<CatalogGame | null> {
 // ─── Products ────────────────────────────────────────────────────────────────
 
 export async function fetchProducts(gameSlug: string): Promise<ProductDoc[]> {
-  const snap = await getDocs(
-    query(
-      collection(getDb(), "products"),
-      where("gameSlug", "==", gameSlug),
-      where("active", "==", true),
-    ),
-  );
-  const docs = snap.docs.map((d) => {
-    const data = d.data() as ProductDoc;
-    return { ...data, createdAt: toMs(data.createdAt), updatedAt: toMs(data.updatedAt) };
-  });
+  const catalog = await fetchApiCatalog();
+  const docs = catalog.products
+    .filter((product) => product.gameSlug === gameSlug)
+    .map((data) => {
+      const category = getProductCategory(data.category);
+      return {
+        ...data,
+        ...(category ? { category } : {}),
+        createdAt: typeof data.createdAt === "number" ? data.createdAt : null,
+        updatedAt: typeof data.updatedAt === "number" ? data.updatedAt : null,
+      } as ProductDoc;
+    });
   return docs.sort((a, b) => a.displayOrder - b.displayOrder);
 }
 
-// ─── Game Accounts ───────────────────────────────────────────────────────────
+// ─── Game Accounts (via API) ───────────────────────────────────────────────────
 
 export async function fetchGameAccounts(gameId?: string): Promise<GameAccountDoc[]> {
-  const constraints = gameId
-    ? [where("gameId", "==", gameId), where("active", "==", true)]
-    : [where("active", "==", true)];
-  const snap = await getDocs(query(collection(getDb(), "gameAccounts"), ...constraints));
-  const docs = snap.docs.map((d) => {
-    const data = d.data() as GameAccountDoc;
-    return { ...data, createdAt: toMs(data.createdAt), updatedAt: toMs(data.updatedAt) };
-  });
-  return docs.sort((a, b) => a.displayOrder - b.displayOrder);
+  const { accounts } = await fetchApiAccounts(gameId);
+  return accounts as unknown as GameAccountDoc[];
 }
 
 export async function fetchGameAccount(id: string): Promise<GameAccountDoc | null> {
-  const snap = await getDoc(doc(getDb(), "gameAccounts", id));
-  if (!snap.exists()) return null;
-  const data = snap.data() as GameAccountDoc;
-  if (!data.active) return null;
-  return { ...data, createdAt: toMs(data.createdAt), updatedAt: toMs(data.updatedAt) };
+  try {
+    const { account } = await fetchApiAccount(id);
+    return account as unknown as GameAccountDoc;
+  } catch {
+    return null;
+  }
 }
+
+// ─── FAQs (via API) ────────────────────────────────────────────────────────────
 
 export interface StoreFaq {
   question: string;
@@ -171,24 +162,15 @@ export interface StoreFaq {
 }
 
 export async function fetchStoreFaqs(): Promise<StoreFaq[] | null> {
-  const snapshot = await getDoc(doc(getDb(), "settings", "faqs"));
-  if (!snapshot.exists()) return null;
-  const items = snapshot.data()["items"];
-  if (!Array.isArray(items)) return [];
-  return items.filter((item): item is StoreFaq =>
-    Boolean(
-      item &&
-      typeof item === "object" &&
-      typeof item["question"] === "string" &&
-      typeof item["answer"] === "string",
-    ),
-  );
+  const { items } = await fetchApiFaqs();
+  return items;
 }
 
+// ─── Store settings ────────────────────────────────────────────────────────────
+
 export async function fetchStoreSettings(): Promise<SettingsDoc | null> {
-  const snapshot = await getDoc(doc(getDb(), "settings", "store"));
-  if (!snapshot.exists()) return null;
-  const data = snapshot.data();
+  const { settings: data } = await fetchApiCatalog();
+  if (!data) return null;
   return {
     storeName: typeof data["storeName"] === "string" ? data["storeName"] : "HASA GOLD STORE",
     tagline: typeof data["tagline"] === "string" ? data["tagline"] : "",
@@ -201,12 +183,16 @@ export async function fetchStoreSettings(): Promise<SettingsDoc | null> {
     currency: typeof data["currency"] === "string" ? data["currency"] : "LKR",
     bannerEnabled: data["bannerEnabled"] === true,
     maintenanceMode: data["maintenanceMode"] === true,
+    maintenanceTitle:
+      typeof data["maintenanceTitle"] === "string" ? data["maintenanceTitle"] : undefined,
+    maintenanceMessage:
+      typeof data["maintenanceMessage"] === "string" ? data["maintenanceMessage"] : undefined,
     paymentMethods: parsePaymentMethods(data["paymentMethods"]),
-    updatedAt: toMs(data["updatedAt"]),
+    updatedAt: typeof data["updatedAt"] === "number" ? data["updatedAt"] : null,
   };
 }
 
-// ─── User profile ─────────────────────────────────────────────────────────────
+// ─── User profile (via API) ────────────────────────────────────────────────────
 
 export async function ensureUserDoc(args: {
   uid: string;
@@ -214,83 +200,12 @@ export async function ensureUserDoc(args: {
   displayName: string;
   profileComplete?: boolean;
 }): Promise<void> {
-  if (!args.uid) throw new Error("Sign in to load your account profile.");
-  const ref = doc(getDb(), "users", args.uid);
-  await runTransaction(getDb(), async (transaction) => {
-    const existing = await transaction.get(ref);
-    if (existing.exists()) {
-      const data = existing.data() as Partial<UserDoc>;
-      const notificationPrefs =
-        data.notificationPrefs &&
-        typeof data.notificationPrefs.updates === "boolean" &&
-        typeof data.notificationPrefs.reminders === "boolean"
-          ? data.notificationPrefs
-          : { updates: false, reminders: false };
-      const savedPlayerIds =
-        data.savedPlayerIds &&
-        typeof data.savedPlayerIds === "object" &&
-        !Array.isArray(data.savedPlayerIds)
-          ? data.savedPlayerIds
-          : {};
-      const recentViewedGames = Array.isArray(data.recentViewedGames)
-        ? data.recentViewedGames
-            .filter((game): game is string => typeof game === "string")
-            .slice(0, 4)
-        : [];
-      const favorites = Array.isArray(data.favorites)
-        ? data.favorites
-            .filter((favorite): favorite is string => typeof favorite === "string")
-            .slice(0, 100)
-        : [];
-      const theme =
-        data.theme === "light" || data.theme === "dark" || data.theme === "system"
-          ? data.theme
-          : "system";
-      const displayName =
-        typeof data.displayName === "string" && data.displayName.trim().length <= 80
-          ? data.displayName
-          : args.displayName.slice(0, 80);
-
-      const repair = {
-        ...(data.displayName === displayName ? {} : { displayName }),
-        ...(JSON.stringify(data.notificationPrefs) === JSON.stringify(notificationPrefs)
-          ? {}
-          : { notificationPrefs }),
-        ...(JSON.stringify(data.savedPlayerIds) === JSON.stringify(savedPlayerIds)
-          ? {}
-          : { savedPlayerIds }),
-        ...(JSON.stringify(data.recentViewedGames) === JSON.stringify(recentViewedGames)
-          ? {}
-          : { recentViewedGames }),
-        ...(JSON.stringify(data.favorites) === JSON.stringify(favorites) ? {} : { favorites }),
-        ...(data.theme === theme ? {} : { theme }),
-      };
-      if (Object.keys(repair).length) transaction.update(ref, { ...repair, updatedAt: Date.now() });
-      return;
-    }
-    const newDoc: UserDoc = {
-      uid: args.uid,
-      email: args.email,
-      displayName: args.displayName,
-      role: "customer",
-      notificationPrefs: { updates: false, reminders: false },
-      savedPlayerIds: {},
-      recentViewedGames: [],
-      favorites: [],
-      theme: "system",
-      profileComplete: args.profileComplete ?? true,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-    transaction.set(ref, newDoc);
-  });
+  await ensureApiProfile();
 }
 
 export async function fetchUserDoc(uid: string): Promise<UserDoc | null> {
-  if (!uid) throw new Error("Sign in to load your account profile.");
-  const snap = await getDoc(doc(getDb(), "users", uid));
-  if (!snap.exists()) return null;
-  return snap.data() as UserDoc;
+  const result = await ensureApiProfile();
+  return result.profile as unknown as UserDoc;
 }
 
 export async function updateUserDoc(
@@ -307,66 +222,63 @@ export async function updateUserDoc(
     >
   >,
 ): Promise<void> {
-  if (!uid) throw new Error("Sign in to update your account preferences.");
-  await updateDoc(doc(getDb(), "users", uid), { ...values, updatedAt: Date.now() });
+  await updateApiProfile(values);
 }
 
-// ─── Orders (user) ────────────────────────────────────────────────────────────
-
-const USER_ORDERS_PAGE_SIZE = 25;
+// ─── Orders (via API) ──────────────────────────────────────────────────────────
 
 export interface UserOrdersPage {
   orders: OrderDoc[];
-  nextCursor: QueryDocumentSnapshot<DocumentData> | null;
+  nextCursor: string | null;
 }
 
-export async function fetchUserOrders(
-  uid: string,
-  cursor: QueryDocumentSnapshot<DocumentData> | null,
-): Promise<UserOrdersPage> {
-  if (!uid) throw new Error("Sign in to load your orders.");
-  const ordersCollection = collection(getDb(), "orders");
-  const snap = await getDocs(
-    cursor
-      ? query(
-          ordersCollection,
-          where("customerUid", "==", uid),
-          orderBy("createdAt", "desc"),
-          startAfter(cursor),
-          limit(USER_ORDERS_PAGE_SIZE),
-        )
-      : query(
-          ordersCollection,
-          where("customerUid", "==", uid),
-          orderBy("createdAt", "desc"),
-          limit(USER_ORDERS_PAGE_SIZE),
-        ),
-  );
-  return {
-    orders: snap.docs.map((d) => {
-      const data = d.data() as OrderDoc;
-      return {
-        ...data,
-        orderId: d.id,
-        createdAt: toMs(data.createdAt),
-        updatedAt: toMs(data.updatedAt),
-      };
+export async function fetchUserOrders(uid: string, cursor: string | null): Promise<UserOrdersPage> {
+  const { fetchApiOrders } = await import("@/lib/api-client");
+  const result = await fetchApiOrders(25);
+  const orders = result.orders.map((order) => ({
+    ...order,
+    orderId: order.id,
+    createdAt: typeof order.createdAt === "number" ? order.createdAt : null,
+    updatedAt: typeof order.updatedAt === "number" ? order.updatedAt : null,
+  })) as unknown as OrderDoc[];
+  return { orders, nextCursor: null };
+}
+
+// ─── Wallet (via API, polling) ─────────────────────────────────────────────────
+
+export async function fetchWalletData(uid: string): Promise<{
+  balance: number;
+  deposits: WalletDepositDoc[];
+  adjustments: WalletAdjustmentDoc[];
+  orders: OrderDoc[];
+}> {
+  const data = await getApiWallet();
+  const orders = ((data.orders as unknown as Array<Record<string, unknown>>) || []).map(
+    (order) => ({
+      ...order,
+      orderId: (order.id as string) || (order.orderId as string) || "",
     }),
-    nextCursor: snap.size === USER_ORDERS_PAGE_SIZE ? (snap.docs.at(-1) ?? null) : null,
+  ) as unknown as OrderDoc[];
+  return {
+    balance: data.balance,
+    deposits: data.deposits as unknown as WalletDepositDoc[],
+    adjustments: data.adjustments as unknown as WalletAdjustmentDoc[],
+    orders,
   };
 }
 
 // ─── React Query hooks ────────────────────────────────────────────────────────
 
 export function useGames() {
-  return useQuery({ queryKey: ["games"], queryFn: fetchGames, staleTime: 5 * 60_000 });
+  // Catalog data is small and admin edits must appear immediately.
+  return useQuery({ queryKey: ["games"], queryFn: fetchGames, staleTime: 0 });
 }
 export function useGame(slug: string | undefined) {
   return useQuery({
     queryKey: ["game", slug],
     queryFn: () => (slug ? fetchGame(slug) : Promise.resolve(null)),
     enabled: Boolean(slug),
-    staleTime: 5 * 60_000,
+    staleTime: 0,
   });
 }
 export function useProducts(gameSlug: string | undefined) {
@@ -374,14 +286,14 @@ export function useProducts(gameSlug: string | undefined) {
     queryKey: ["products", gameSlug],
     queryFn: () => (gameSlug ? fetchProducts(gameSlug) : Promise.resolve([])),
     enabled: Boolean(gameSlug),
-    staleTime: 30_000,
+    staleTime: 0,
   });
 }
 export function useGameAccounts(gameId?: string) {
   return useQuery({
     queryKey: ["gameAccounts", gameId ?? "all"],
     queryFn: () => fetchGameAccounts(gameId),
-    staleTime: 5 * 60_000,
+    staleTime: 0,
   });
 }
 export function useGameAccount(id: string | undefined) {
@@ -389,154 +301,31 @@ export function useGameAccount(id: string | undefined) {
     queryKey: ["gameAccount", id],
     queryFn: () => (id ? fetchGameAccount(id) : Promise.resolve(null)),
     enabled: Boolean(id),
-    staleTime: 5 * 60_000,
+    staleTime: 0,
   });
 }
 export function useUserOrders(uid: string | null | undefined) {
-  return useInfiniteQuery({
+  return useQuery({
     queryKey: ["userOrders", uid],
-    queryFn: ({ pageParam }) =>
-      uid ? fetchUserOrders(uid, pageParam) : Promise.resolve({ orders: [], nextCursor: null }),
+    queryFn: () =>
+      uid ? fetchUserOrders(uid, null) : Promise.resolve({ orders: [], nextCursor: null }),
     enabled: Boolean(uid),
-    initialPageParam: null as QueryDocumentSnapshot<DocumentData> | null,
-    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
-    staleTime: 30_000,
-    refetchInterval: 10_000,
+    staleTime: 60_000,
+    refetchInterval: 30_000,
   });
 }
-// ─── Wallet ───────────────────────────────────────────────────────────────────
 
-/**
- * Subscribe to real-time balance updates via Firestore onSnapshot.
- * Returns an unsubscribe function. Calls onBalance with the latest value
- * whenever Firestore pushes an update.
- */
-export function subscribeWalletBalance(
-  uid: string,
-  onBalance: (lkr: number) => void,
-  onError?: (error: Error) => void,
-): () => void {
-  if (!uid) return () => {};
-  if (!isFirebaseConfigured) {
-    onError?.(new FirebaseSetupError());
-    return () => {};
-  }
-  const ref = doc(getDb(), "users", uid);
-  return onSnapshot(
-    ref,
-    (snap) => {
-      if (!snap.exists()) {
-        onBalance(0);
-        return;
-      }
-      const data = snap.data() as UserDoc;
-      onBalance(typeof data.walletBalanceLkr === "number" ? data.walletBalanceLkr : 0);
-    },
-    onError,
-  );
-}
+// ─── Wallet data polling hook ──────────────────────────────────────────────────
 
-/**
- * Subscribe to real-time deposit list updates via Firestore onSnapshot.
- */
-export function subscribeWalletDeposits(
-  uid: string,
-  onDeposits: (deposits: WalletDepositDoc[]) => void,
-  onError?: (error: Error) => void,
-): () => void {
-  if (!uid) return () => {};
-  if (!isFirebaseConfigured) {
-    onError?.(new FirebaseSetupError());
-    return () => {};
-  }
-  const q = query(
-    collection(getDb(), "wallet_deposits"),
-    where("uid", "==", uid),
-    orderBy("createdAt", "desc"),
-  );
-  return onSnapshot(
-    q,
-    (snap) => {
-      const docs = snap.docs.map((d) => {
-        const data = d.data() as WalletDepositDoc;
-        return {
-          ...data,
-          createdAt: toMs(data.createdAt),
-          updatedAt: toMs(data.updatedAt),
-          creditedAt: toMs(data.creditedAt),
-        };
-      });
-      onDeposits(docs);
-    },
-    onError,
-  );
-}
-
-/**
- * Subscribe to administrator wallet adjustments for the signed-in customer.
- */
-export function subscribeWalletAdjustments(
-  uid: string,
-  onAdjustments: (adjustments: WalletAdjustmentDoc[]) => void,
-  onError?: (error: Error) => void,
-): () => void {
-  if (!uid) return () => {};
-  if (!isFirebaseConfigured) {
-    onError?.(new FirebaseSetupError());
-    return () => {};
-  }
-  const q = query(
-    collection(getDb(), "wallet_adjustments"),
-    where("uid", "==", uid),
-    orderBy("createdAt", "desc"),
-  );
-  return onSnapshot(
-    q,
-    (snap) => {
-      const docs = snap.docs.map((d) => {
-        const data = d.data() as WalletAdjustmentDoc;
-        return { ...data, createdAt: toMs(data.createdAt) };
-      });
-      onAdjustments(docs);
-    },
-    onError,
-  );
-}
-
-/**
- * Subscribe to recent customer orders so wallet-paid purchases appear in the
- * wallet ledger alongside deposits and administrator adjustments.
- */
-export function subscribeWalletOrders(
-  uid: string,
-  onOrders: (orders: OrderDoc[]) => void,
-  onError?: (error: Error) => void,
-): () => void {
-  if (!uid) return () => {};
-  if (!isFirebaseConfigured) {
-    onError?.(new FirebaseSetupError());
-    return () => {};
-  }
-  const q = query(
-    collection(getDb(), "orders"),
-    where("customerUid", "==", uid),
-    orderBy("createdAt", "desc"),
-    limit(USER_ORDERS_PAGE_SIZE),
-  );
-  return onSnapshot(
-    q,
-    (snap) => {
-      const docs = snap.docs.map((d) => {
-        const data = d.data() as OrderDoc;
-        return {
-          ...data,
-          orderId: d.id,
-          createdAt: toMs(data.createdAt),
-          updatedAt: toMs(data.updatedAt),
-        };
-      });
-      onOrders(docs);
-    },
-    onError,
-  );
+export function useWalletData(uid: string | null | undefined) {
+  return useQuery({
+    queryKey: ["wallet", uid],
+    queryFn: () =>
+      uid
+        ? fetchWalletData(uid)
+        : Promise.resolve({ balance: 0, deposits: [], adjustments: [], orders: [] }),
+    enabled: Boolean(uid),
+    staleTime: 30_000,
+    refetchInterval: 30_000,
+  });
 }

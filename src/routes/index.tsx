@@ -10,11 +10,13 @@ import {
   ShieldCheck,
   Sparkles,
   Package,
+  Zap,
+  Trophy,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CatalogGrid, Steps, SupportBand, FAQ } from "@/components/store-ui";
 import { pageHead } from "@/lib/store-data";
-import { resolveArtwork, useGameAccounts } from "@/lib/firestore";
+import { resolveArtwork, useGameAccounts, useGames } from "@/lib/firestore";
 import hero from "@/assets/diamond-world.jpg";
 
 export const Route = createFileRoute("/")({
@@ -40,8 +42,23 @@ function Index() {
     error: accountsError,
     refetch: retryAccounts,
   } = useGameAccounts();
+  // Game names and counts come from the live catalog, so the homepage can never
+  // advertise a game that is not actually available.
+  const { data: games = [] } = useGames();
+  const gameNames = games.map((game) => game.name.replace(/\s*\(.*?\)\s*$/, "")).filter(Boolean);
+  const gameCount = gameNames.length;
+  const gameList =
+    gameNames.length > 0
+      ? gameNames.slice(0, 3).join(", ") + (gameNames.length > 3 ? " and more" : "")
+      : "every game in the live catalog";
+  // Never claim "0 games" when the catalog could not be read.
+  const gameCountLabel = gameCount > 0 ? String(gameCount) : "Live";
+  const gamesWord = gameCount > 0 ? "Games" : "Catalog";
+  const gamesPill = gameCount > 0 ? `${gameCount} Games Active` : "Live Catalog";
+  const supportedGamesTitle = gameCount > 0 ? `${gameCount} Supported Games` : "Live Catalog Games";
   return (
     <div className="container">
+      {/* ── Desktop Cinematic Hero (>640 px) ─────────────────────────── */}
       <section className="hero">
         <img
           className="hero-image"
@@ -50,112 +67,198 @@ function Index() {
           width={1536}
           height={864}
         />
-        <span className="hero-live-tag">Live catalog</span>
+        {/* Deep cinematic gradient overlay */}
+        <span className="hero-film" aria-hidden="true" />
+        {/* Animated particle glow */}
+        <span className="hero-glow-orb hero-glow-orb--gold" aria-hidden="true" />
+        <span className="hero-glow-orb hero-glow-orb--blue" aria-hidden="true" />
+
+        {/* Live pill – top-right */}
+        <span className="hero-live-tag">
+          <span className="hero-live-dot" aria-hidden="true" />
+          Live catalog
+        </span>
+
+        {/* Floating game badges */}
+        {games.slice(0, 3).map((game) => (
+          <span key={game.id} className="hero-badge hero-badge--ff" aria-hidden="true">
+            {game.icon === "diamond" ? <Diamond size={12} /> : <Zap size={12} />} {game.name}
+          </span>
+        ))}
+
         <div className="hero-content">
+          {/* Eyebrow pill */}
           <span className="eyebrow hero-eyebrow">
             <span className="hero-eyebrow-icon" aria-hidden="true">
               <Sparkles size={12} />
             </span>
             YOUR NEXT LEVEL STARTS HERE
           </span>
+
+          {/* Brand kicker */}
+          <span className="hero-brandline">HASA GOLD &amp; TOP-UP STORE</span>
+
+          {/* Main headline */}
           <h1>
-            <span className="hero-brandline">HASA GOLD &amp; ACCOUNT STORE</span>
             More play.
             <br />
             <span className="hero-title-accent">More possibilities.</span>
           </h1>
-          <p>Your favorite games, all in one place. Browse the catalog and track your orders.</p>
+
+          <p>Direct game top-ups for {gameList}.</p>
+
+          {/* Trust stats strip */}
+          <div className="hero-stats">
+            <span className="hero-stat">
+              <Gamepad2 size={14} />
+              <strong>{gameCountLabel}</strong> {gamesWord}
+            </span>
+            <span className="hero-stat-sep" aria-hidden="true" />
+            <span className="hero-stat">
+              <ShieldCheck size={14} />
+              Player&nbsp;ID&nbsp;only
+            </span>
+            <span className="hero-stat-sep" aria-hidden="true" />
+            <span className="hero-stat">
+              <BadgeCheck size={14} />
+              Manual&nbsp;review
+            </span>
+            <span className="hero-stat-sep" aria-hidden="true" />
+            <span className="hero-stat">
+              <Zap size={14} />
+              eZ&nbsp;Cash&nbsp;ready
+            </span>
+          </div>
+
+          {/* CTAs */}
           <div className="hero-actions">
-            <Button asChild size="lg">
+            <Button asChild size="lg" className="hero-cta-primary">
               <Link to="/games">
                 Explore top-ups <ArrowRight />
               </Link>
             </Button>
-            <Button asChild variant="outline" size="lg">
+            <Button asChild variant="outline" size="lg" className="hero-cta-outline">
               <Link to="/accounts">
                 Browse accounts <ArrowUpRight />
               </Link>
             </Button>
           </div>
-          <span className="hero-note">
-            <Info size={13} /> Payments and top-up fulfillment are not currently available.
-          </span>
         </div>
       </section>
-      {/* Animated typographic hero shown only on phone-width screens (<=640px). */}
+      {/* ── Mobile Hero (≤640 px) ────────────────────────── */}
       <section className="hero-mobile">
-        <span className="hero-mobile-orb is-gold" aria-hidden="true" />
-        <span className="hero-mobile-orb is-blue" aria-hidden="true" />
-        <span className="hero-mobile-grid" aria-hidden="true" />
+        <div className="hero-mobile-bg-glow" aria-hidden="true" />
+        <img
+          className="hero-mobile-bg-image"
+          src={hero}
+          alt="Gaming diamonds and gold coins"
+          width={800}
+          height={600}
+        />
+        <div className="hero-mobile-overlay" aria-hidden="true" />
+
         <div className="hero-mobile-inner">
-          <span className="hero-mobile-chip">
-            <span className="hero-mobile-dot" aria-hidden="true" />
-            Live catalog
-          </span>
-          <span className="hero-mobile-brand">HASA GOLD &amp; ACCOUNT STORE</span>
-          <h1>
-            <span className="hero-mobile-line">More play.</span>
-            <span className="hero-mobile-cycle">
-              <span className="hero-mobile-track">
-                <span className="hero-mobile-word">possibilities.</span>
-                <span className="hero-mobile-word">diamonds.</span>
-                <span className="hero-mobile-word">accounts.</span>
-                <span className="hero-mobile-word">top-ups.</span>
-                <span className="hero-mobile-word">possibilities.</span>
-              </span>
+          {/* Top header row inside hero */}
+          <div className="hero-mobile-top">
+            <span className="hero-mobile-chip">
+              <span className="hero-mobile-dot" aria-hidden="true" />
+              Live catalog
             </span>
+            <span className="hero-mobile-games-pill">
+              <Gamepad2 size={12} /> {gamesPill}
+            </span>
+          </div>
+
+          <div className="hero-mobile-badge-kicker">
+            <Sparkles size={11} /> HASA GOLD STORE
+          </div>
+
+          {/* Headline */}
+          <h1 className="hero-mobile-title">
+            More play.
+            <br />
+            <span className="hero-mobile-title-accent">More possibilities.</span>
           </h1>
+
           <p className="hero-mobile-sub">
-            Your favorite games, all in one place. Browse the catalog and track your orders.
+            Direct player top-ups with manual payment review. Fast, secure &amp; reliable.
           </p>
+
+          {/* Quick game chips bar */}
+          <div className="hero-mobile-game-chips">
+            {games.slice(0, 3).map((game) => (
+              <span key={game.id} className="hero-mobile-game-tag">
+                {game.icon === "diamond" ? <Diamond size={11} /> : <Zap size={11} />} {game.name}
+              </span>
+            ))}
+          </div>
+
+          {/* Primary & Secondary Action CTAs side-by-side or stacked cleanly */}
           <div className="hero-mobile-actions">
-            <Button asChild size="lg">
+            <Button asChild size="lg" className="hero-mobile-btn-primary">
               <Link to="/games">
-                Explore top-ups <ArrowRight />
+                Explore top-ups <ArrowRight size={16} />
               </Link>
             </Button>
-            <Button asChild variant="outline" size="lg">
+            <Button asChild variant="outline" size="lg" className="hero-mobile-btn-outline">
               <Link to="/accounts">
-                Browse accounts <ArrowUpRight />
+                Browse accounts <ArrowUpRight size={16} />
               </Link>
             </Button>
           </div>
-          <ul className="hero-mobile-points">
-            <li>
-              <ShieldCheck size={13} /> Player ID only
-            </li>
-            <li>
-              <BadgeCheck size={13} /> Verified listings
-            </li>
-            <li>
-              <Heart size={13} /> Save favorites
-            </li>
-          </ul>
-          <span className="hero-mobile-note">
-            <Info size={13} /> Payments and top-up fulfillment are not currently available.
-          </span>
+
+          {/* Trust points grid */}
+          <div className="hero-mobile-trust-grid">
+            <div className="hero-mobile-trust-item">
+              <ShieldCheck size={14} />
+              <span>Player ID Only</span>
+            </div>
+            <div className="hero-mobile-trust-item">
+              <BadgeCheck size={14} />
+              <span>Manual payment review</span>
+            </div>
+            <div className="hero-mobile-trust-item">
+              <Zap size={14} />
+              <span>eZ Cash Instant</span>
+            </div>
+          </div>
         </div>
       </section>
       <div className="feature-row">
         <div className="feature-item">
-          <Gamepad2 />
-          <div>
-            <h3>Top-ups & accounts</h3>
-            <p>Explore the store catalog.</p>
+          <div className="feature-item-icon">
+            <Gamepad2 size={20} />
+          </div>
+          <div className="feature-item-text">
+            <h3>{supportedGamesTitle}</h3>
+            <p>{gameList}.</p>
           </div>
         </div>
         <div className="feature-item">
-          <BadgeCheck />
-          <div>
-            <h3>Account listings</h3>
-            <p>Review listing details and availability.</p>
+          <div className="feature-item-icon">
+            <ShieldCheck size={20} />
+          </div>
+          <div className="feature-item-text">
+            <h3>Player ID Top-ups</h3>
+            <p>Direct &amp; safe delivery without passwords.</p>
           </div>
         </div>
         <div className="feature-item">
-          <Heart />
-          <div>
-            <h3>Keep your favorites close</h3>
-            <p>Save games to your account.</p>
+          <div className="feature-item-icon">
+            <BadgeCheck size={20} />
+          </div>
+          <div className="feature-item-text">
+            <h3>Accounts Coming Soon</h3>
+            <p>Curated, hand-checked accounts are on the way.</p>
+          </div>
+        </div>
+        <div className="feature-item">
+          <div className="feature-item-icon">
+            <Zap size={20} />
+          </div>
+          <div className="feature-item-text">
+            <h3>eZ Cash Instant</h3>
+            <p>Fast wallet top-up and seamless checkout.</p>
           </div>
         </div>
       </div>
@@ -186,13 +289,19 @@ function Index() {
               <BadgeCheck size={12} /> ACCOUNT LISTINGS
             </span>
             <h2>Game Account Listings</h2>
-            <p>Current listings from the store catalog. Purchases are not available yet.</p>
+            <p>
+              {featured.length
+                ? "Current listings from the store catalog. Purchases are not available yet."
+                : "Verified accounts are on the way — top-ups are live today."}
+            </p>
           </div>
-          <Button variant="link" asChild>
-            <Link to="/accounts">
-              View all accounts <ArrowRight />
-            </Link>
-          </Button>
+          {featured.length > 0 && (
+            <Button variant="link" asChild>
+              <Link to="/accounts">
+                View all accounts <ArrowRight />
+              </Link>
+            </Button>
+          )}
         </div>
         {accountsLoading ? (
           <div className="empty-state" aria-busy="true">
@@ -254,18 +363,44 @@ function Index() {
             ))}
           </div>
         ) : (
-          <div className="empty-state">
-            <Package />
-            <p>No active account listings.</p>
+          <div className="accounts-coming-soon">
+            <span className="accounts-coming-soon-glow" aria-hidden="true" />
+            <span className="accounts-coming-soon-icon" aria-hidden="true">
+              <Sparkles size={22} />
+            </span>
+            <span className="accounts-coming-soon-tag">Coming soon</span>
+            <h3>Verified game accounts, hand-checked by us</h3>
+            <p>
+              We are curating a small set of verified accounts with escrow-protected handover.
+              Listings will appear here as soon as verification is complete.
+            </p>
+            <ul className="accounts-coming-soon-points">
+              <li>
+                <ShieldCheck size={14} /> Manually verified before listing
+              </li>
+              <li>
+                <BadgeCheck size={14} /> Escrow-protected handover
+              </li>
+              <li>
+                <Gamepad2 size={14} /> Accounts for every supported game
+              </li>
+            </ul>
+            <Button asChild size="lg" className="accounts-coming-soon-cta">
+              <Link to="/games">
+                Browse top-up packages <ArrowRight size={16} />
+              </Link>
+            </Button>
           </div>
         )}
-        <div className="acc-view-all-wrap">
-          <Button asChild variant="outline" size="lg">
-            <Link to="/accounts">
-              Browse all game accounts <ArrowUpRight />
-            </Link>
-          </Button>
-        </div>
+        {featured.length > 0 && (
+          <div className="acc-view-all-wrap">
+            <Button asChild variant="outline" size="lg">
+              <Link to="/accounts">
+                Browse all game accounts <ArrowUpRight />
+              </Link>
+            </Button>
+          </div>
+        )}
       </section>
 
       <section className="steps-section">

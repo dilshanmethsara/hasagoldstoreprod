@@ -1,5 +1,6 @@
 import { Link, useNavigate, useLocation } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
+import { createPortal } from "react-dom";
 import {
   ArrowRight,
   ArrowUpRight,
@@ -18,6 +19,7 @@ import {
   Search,
   ShieldCheck,
   ShoppingBag,
+  Sparkles,
   X,
   Wallet,
 } from "lucide-react";
@@ -66,7 +68,7 @@ export function StoreHeader() {
   const { data: storeSettings } = useQuery({
     queryKey: ["storeSettings"],
     queryFn: fetchStoreSettings,
-    staleTime: 60_000,
+    staleTime: 0,
   });
   const navGames: readonly CatalogGame[] = isLoading ? [] : (data ?? []);
   const results = navGames.filter((game) =>
@@ -174,30 +176,92 @@ export function StoreHeader() {
             </Button>
           </div>
         </div>
-        {menu && (
-          <nav className="mobile-nav container" aria-label="Mobile navigation">
-            <Link to="/" onClick={() => setMenu(false)}>
-              Home
-            </Link>
-            <Link to="/games" onClick={() => setMenu(false)}>
-              Games
-            </Link>
-            <Link to="/accounts" onClick={() => setMenu(false)}>
-              <BadgeCheck size={14} /> Game Accounts
-            </Link>
-            {ready && uid && (
-              <Link to="/dashboard/wallet" onClick={() => setMenu(false)}>
-                <Wallet size={14} /> Wallet ({isLoaded ? formatAmount(balance) : "…"})
-              </Link>
-            )}
-            <Link to="/how-it-works" onClick={() => setMenu(false)}>
-              How it works
-            </Link>
-            <Link to="/support" onClick={() => setMenu(false)}>
-              Support
-            </Link>
-          </nav>
-        )}
+        {menu &&
+          typeof document !== "undefined" &&
+          createPortal(
+            <div className="mobile-nav-backdrop" onClick={() => setMenu(false)}>
+              <nav
+                className="mobile-nav container"
+                aria-label="Mobile navigation"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Wallet quick balance if logged in */}
+                {ready && uid && (
+                  <Link
+                    to="/dashboard/wallet"
+                    className="mobile-nav-wallet-card"
+                    onClick={() => setMenu(false)}
+                  >
+                    <div className="mobile-nav-wallet-left">
+                      <span className="mobile-nav-wallet-icon">
+                        <Wallet size={16} />
+                      </span>
+                      <div>
+                        <span className="mobile-nav-wallet-label">HASA Wallet</span>
+                        <strong className="mobile-nav-wallet-amount">
+                          {isLoaded ? formatAmount(balance) : "…"}
+                        </strong>
+                      </div>
+                    </div>
+                    <span className="mobile-nav-wallet-action">Top Up →</span>
+                  </Link>
+                )}
+
+                <div className="mobile-nav-links-grid">
+                  <Link to="/" className="mobile-nav-link" onClick={() => setMenu(false)}>
+                    <Home size={16} className="text-primary" />
+                    <span>Home</span>
+                  </Link>
+                  <Link to="/games" className="mobile-nav-link" onClick={() => setMenu(false)}>
+                    <Gamepad2 size={16} className="text-amber-500" />
+                    <span>Top-ups</span>
+                  </Link>
+                  <Link to="/accounts" className="mobile-nav-link" onClick={() => setMenu(false)}>
+                    <BadgeCheck size={16} className="text-blue-500" />
+                    <span>Game Accounts</span>
+                  </Link>
+                  <Link
+                    to="/how-it-works"
+                    className="mobile-nav-link"
+                    onClick={() => setMenu(false)}
+                  >
+                    <HelpCircle size={16} className="text-emerald-500" />
+                    <span>How it works</span>
+                  </Link>
+                  <Link to="/support" className="mobile-nav-link" onClick={() => setMenu(false)}>
+                    <MessageCircle size={16} className="text-violet-500" />
+                    <span>Support</span>
+                  </Link>
+                  <Link to="/status" className="mobile-nav-link" onClick={() => setMenu(false)}>
+                    <Sparkles size={16} className="text-yellow-400" />
+                    <span>System Status</span>
+                  </Link>
+                </div>
+
+                {/* Quick Game shortcuts */}
+                {navGames && navGames.length > 0 && (
+                  <div className="mobile-nav-games-section">
+                    <span className="mobile-nav-section-title">Popular Games</span>
+                    <div className="mobile-nav-games-list">
+                      {navGames.slice(0, 3).map((game) => (
+                        <Link
+                          key={game.id}
+                          to="/games/$game"
+                          params={{ game: game.id }}
+                          className="mobile-nav-game-item"
+                          onClick={() => setMenu(false)}
+                        >
+                          <img src={game.image} alt={game.name} width={28} height={28} />
+                          <span>{game.name}</span>
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </nav>
+            </div>,
+            document.body,
+          )}
       </header>
       <Dialog open={quick} onOpenChange={setQuick}>
         <DialogContent>
@@ -314,7 +378,7 @@ export function StoreFooter() {
   const { data: storeSettings } = useQuery({
     queryKey: ["storeSettings"],
     queryFn: fetchStoreSettings,
-    staleTime: 60_000,
+    staleTime: 0,
   });
   return (
     <footer className="store-footer">
@@ -332,7 +396,7 @@ export function StoreFooter() {
                 <ShieldCheck size={12} /> Player ID only
               </span>
               <span>
-                <BadgeCheck size={12} /> Verified listings
+                <BadgeCheck size={12} /> Manual review
               </span>
               <span>
                 <Heart size={12} /> Saved favorites
@@ -411,6 +475,26 @@ export function StoreFooter() {
           <div className="footer-bottom-left">
             <span className="footer-copyright">
               &copy; {new Date().getFullYear()} HASA GOLD STORE
+            </span>
+            <span className="footer-developer" title="Pathum Software Solutions">
+              <span className="footer-developer-mark" aria-hidden="true">
+                <svg
+                  viewBox="0 0 24 24"
+                  width="12"
+                  height="12"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="m8 6-6 6 6 6" />
+                  <path d="m16 6 6 6-6 6" />
+                </svg>
+              </span>
+              <span className="footer-developer-text">
+                Developed by <strong>Pathum Software Solutions</strong>
+              </span>
             </span>
             <span className="footer-disclaimer">
               eZ Cash proof review is manual; top-up fulfillment is not automated.
@@ -588,7 +672,7 @@ export function FAQ({ compact = false, query = "" }: { compact?: boolean; query?
   const { data: firestoreFaqs } = useQuery({
     queryKey: ["storeFaqs"],
     queryFn: fetchStoreFaqs,
-    staleTime: 60_000,
+    staleTime: 0,
   });
   const currentFaqs = firestoreFaqs ?? faqs;
   const items = (compact ? currentFaqs.slice(0, 4) : currentFaqs).filter((item) =>

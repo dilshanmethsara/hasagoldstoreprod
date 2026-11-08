@@ -1,11 +1,19 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   ArrowDownLeft,
+  ArrowUpRight,
   CheckCircle2,
+  Copy,
   CreditCard,
+  History,
+  Info,
   Loader2,
+  Lock,
+  PlusCircle,
   ShieldCheck,
   Smartphone,
+  Sparkles,
   Wallet,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -13,10 +21,7 @@ import { Button } from "@/components/ui/button";
 import { useAccount } from "./account-context";
 import { useWallet } from "./wallet-context";
 import { EzCashDepositDialog, type EzCashDepositStage } from "./ezcash-deposit-dialog";
-
-/** Store eZ Cash number that customers must send their payment to. */
-const STORE_EZCASH_NUMBER = "0741635465";
-const STORE_EZCASH_NUMBER_DISPLAY = "074 163 5465";
+import { fetchStoreSettings } from "@/lib/firestore";
 
 type EzGuideLang = "en" | "si";
 
@@ -72,16 +77,13 @@ type EzDepositFlow = {
   startedAt: number;
 };
 
-/** Poll cadence and deadline for the final eZ Cash answer. */
 const EZ_POLL_INTERVAL_MS = 1500;
-/** Four checks at 1.5s intervals — still pending after ~6s means the RN is invalid. */
 const EZ_MAX_POLL_ATTEMPTS = 4;
 const EZ_NOT_FOUND_MESSAGE =
   "We couldn't find an eZ Cash payment for this reference number. Check the 14 digits and try again.";
 const EZ_UNREACHABLE_MESSAGE =
   "We couldn't reach eZ Cash to check this reference. Check your connection and try again.";
 
-/** Bilingual pre-payment guidance for eZ Cash auto-verified deposits. */
 function EzCashGuide() {
   const [lang, setLang] = useState<EzGuideLang>("en");
   const copy = EZ_GUIDE_COPY[lang];
@@ -100,22 +102,20 @@ function EzCashGuide() {
             </p>
           </div>
         </div>
-        <div className="ez-guide-lang" role="group" aria-label="Guide language">
+        <div className="ez-guide-lang" role="radiogroup" aria-label="Language">
           <button
             type="button"
             className={lang === "en" ? "is-active" : ""}
-            aria-pressed={lang === "en"}
             onClick={() => setLang("en")}
           >
-            EN
+            English
           </button>
           <button
             type="button"
             className={lang === "si" ? "is-active" : ""}
-            aria-pressed={lang === "si"}
             onClick={() => setLang("si")}
           >
-            සිං
+            සිංහල
           </button>
         </div>
       </div>
@@ -123,55 +123,72 @@ function EzCashGuide() {
       <ol className="ez-guide-steps">
         {copy.steps.map((step, i) => (
           <li key={i} className="ez-guide-step">
-            <span className="ez-guide-step-num" aria-hidden="true">
-              {i + 1}
-            </span>
+            <span className="ez-guide-step-num">{i + 1}</span>
             <span className="ez-guide-step-text">{step}</span>
           </li>
         ))}
       </ol>
 
       <div className="ez-guide-avoid">
-        <span className="ez-guide-avoid-title">🚫 {copy.avoidTitle}</span>
+        <span className="ez-guide-avoid-title">{copy.avoidTitle}:</span>
         <div className="ez-guide-avoid-list">
           {copy.avoid.map((item) => (
             <span key={item} className="ez-guide-avoid-item">
-              {item}
+              ✕ {item}
             </span>
           ))}
         </div>
       </div>
 
       <div className="ez-guide-note">
-        <span aria-hidden="true">⚠️</span>
+        <Info size={15} style={{ flexShrink: 0, marginTop: "2px" }} />
         <span>{copy.warning}</span>
       </div>
     </section>
   );
 }
 
+function getTxTypeClass(type: string) {
+  switch (type) {
+    case "deposit":
+      return "is-deposit";
+    case "adjustment":
+      return "is-adjustment";
+    case "purchase":
+      return "is-purchase";
+    default:
+      return "";
+  }
+}
+
 export function DashboardWallet() {
+  const { user } = useAccount();
   const {
     balance,
-    formatAmount,
     transactions,
+    formatAmount,
+    isLoaded,
     error: walletError,
     historyError: walletHistoryError,
-    isLoaded,
   } = useWallet();
-  const { user } = useAccount();
 
-  // eZ Cash — RN verification through the Nexaura deposit API.
+  const { data: storeSettings } = useQuery({
+    queryKey: ["storeSettings"],
+    queryFn: fetchStoreSettings,
+    staleTime: 0,
+  });
+
+  const ezStoreNumber = storeSettings?.paymentEzcashNumber?.trim() || "0741635465";
+  const ezStoreName = storeSettings?.paymentEzcashName?.trim() || "HASA Gold";
+
   const [ezRn, setEzRn] = useState("");
   const [ezFieldError, setEzFieldError] = useState<string | null>(null);
   const [ezFlow, setEzFlow] = useState<EzDepositFlow | null>(null);
-  const [ezElapsed, setEzElapsed] = useState(0);
   const [ezPollError, setEzPollError] = useState<string | null>(null);
+  const [ezElapsed, setEzElapsed] = useState(0);
   const [ezNumberCopied, setEzNumberCopied] = useState(false);
   const ezRnInputRef = useRef<HTMLInputElement>(null);
 
-  // Every confirmation gets its own token and they live in a set, so an
-  // in-flight check is never abandoned when the component re-renders.
   const activePollsRef = useRef(new Set<number>());
   const nextPollIdRef = useRef(0);
   useEffect(
@@ -183,9 +200,9 @@ export function DashboardWallet() {
 
   async function copyStoreNumber() {
     try {
-      await navigator.clipboard.writeText(STORE_EZCASH_NUMBER);
+      await navigator.clipboard.writeText(ezStoreNumber);
       setEzNumberCopied(true);
-      toast.success("Store number copied", { description: STORE_EZCASH_NUMBER_DISPLAY });
+      toast.success("Store number copied to clipboard", { description: ezStoreNumber });
       setTimeout(() => setEzNumberCopied(false), 2000);
     } catch {
       toast.error("Could not copy — please copy the number manually.");
@@ -193,9 +210,9 @@ export function DashboardWallet() {
   }
 
   const otherMethods = [
-    { id: "easypaisa", name: "Easypaisa", sub: "Unavailable", icon: <Smartphone size={24} /> },
-    { id: "jazzcash", name: "JazzCash", sub: "Unavailable", icon: <Smartphone size={24} /> },
-    { id: "card", name: "Visa / Mastercard", sub: "Unavailable", icon: <CreditCard size={24} /> },
+    { id: "bank", name: "Bank Transfer", sub: "Coming soon", icon: <CreditCard size={20} /> },
+    { id: "card", name: "Visa / Mastercard", sub: "Coming soon", icon: <CreditCard size={20} /> },
+    { id: "crypto", name: "USDT / Crypto", sub: "Coming soon", icon: <Smartphone size={20} /> },
   ];
 
   const ezDialogBusy = ezFlow?.stage === "submitting" || ezFlow?.stage === "waiting";
@@ -223,8 +240,6 @@ export function DashboardWallet() {
     setEzPollError(null);
     setEzElapsed(0);
 
-    // Each submission gets its own token so a stale response can never
-    // overwrite the result of a newer reference number.
     const pollId = ++nextPollIdRef.current;
     activePollsRef.current.add(pollId);
     const isAlive = () => activePollsRef.current.has(pollId);
@@ -255,11 +270,9 @@ export function DashboardWallet() {
         toast.error("Please sign in to deposit.");
         return;
       }
-      const idToken = await fbUser.getIdToken();
-      const { initiateEzCashDeposit, checkEzCashDeposit } = await import("@/api/ezCashDeposit");
+      const { initiateApiEzCashDeposit, checkApiEzCashDeposit } = await import("@/lib/api-client");
 
-      // One round trip — the server submits the RN without waiting for the answer.
-      const result = await initiateEzCashDeposit({ data: { idToken, referenceNumber: rn } });
+      const result = await initiateApiEzCashDeposit(rn);
       if (!isAlive()) return;
 
       if (result.status === "credited" && result.creditedLkr > 0) {
@@ -294,432 +307,366 @@ export function DashboardWallet() {
         return;
       }
 
-      // The dialog waits with a spinner for at most ~6 seconds. If eZ Cash has
-      // not confirmed by then, the reference is treated as invalid.
       patchFlow({
         stage: "waiting",
         depositId: result.depositId,
-        message: result.message,
-        duplicate: Boolean(result.duplicate),
+        message: result.message || "Checking eZ Cash reference…",
       });
-      setEzRn("");
 
-      let sawPendingReply = false;
-      for (let attempt = 0; attempt < EZ_MAX_POLL_ATTEMPTS; attempt++) {
-        await new Promise((resolve) => setTimeout(resolve, EZ_POLL_INTERVAL_MS));
+      let attempts = 0;
+      while (isAlive() && attempts < EZ_MAX_POLL_ATTEMPTS) {
+        attempts += 1;
+        await new Promise((r) => setTimeout(r, EZ_POLL_INTERVAL_MS));
         if (!isAlive()) return;
 
-        let latest: Awaited<ReturnType<typeof checkEzCashDeposit>>;
         try {
-          const freshToken = await fbUser.getIdToken();
-          latest = await checkEzCashDeposit({
-            data: { idToken: freshToken, depositId: result.depositId },
-          });
-          if (isLatest()) setEzPollError(null);
-          sawPendingReply = true;
-        } catch (error) {
-          // Transient network/provider hiccups keep the dialog waiting until the deadline.
-          if (isLatest()) {
-            setEzPollError(
-              error instanceof Error ? error.message : "The status check did not complete.",
-            );
+          const poll = await checkApiEzCashDeposit(result.depositId);
+          if (!isAlive()) return;
+
+          if (poll.status === "credited" && poll.creditedLkr > 0) {
+            patchFlow({
+              stage: "success",
+              amountLkr: poll.creditedLkr,
+              message: poll.message,
+              duplicate: Boolean(poll.duplicate),
+            });
+            setEzRn("");
+            toast.success("eZ Cash credited!", { description: poll.message });
+            return;
           }
-          continue;
-        }
-        if (!isAlive()) return;
 
-        if (latest.status === "credited" && latest.creditedLkr > 0) {
-          patchFlow({
-            stage: "success",
-            amountLkr: latest.creditedLkr,
-            message: latest.message,
-            duplicate: Boolean(latest.duplicate),
-          });
-          toast.success("eZ Cash credited!", { description: latest.message });
-          return;
-        }
-
-        if (latest.status === "failed") {
-          patchFlow({ stage: "failed", message: latest.message });
-          toast.error("Verification failed", { description: latest.message });
-          return;
+          if (poll.status === "failed") {
+            patchFlow({
+              stage: "failed",
+              message: poll.message,
+              duplicate: Boolean(poll.duplicate),
+            });
+            toast.error("Deposit failed", { description: poll.message });
+            return;
+          }
+        } catch {
+          // Keep polling until max attempts
         }
       }
 
-      // Six seconds without a final answer: show the cross mark instead of
-      // spinning longer, because a valid RN is confirmed almost immediately.
-      const timeoutMessage = sawPendingReply ? EZ_NOT_FOUND_MESSAGE : EZ_UNREACHABLE_MESSAGE;
-      patchFlow({ stage: "failed", message: timeoutMessage });
-      toast.error(sawPendingReply ? "Reference not found" : "Verification unavailable", {
-        description: timeoutMessage,
-      });
-    } catch (error) {
       if (!isAlive()) return;
-      const msg = error instanceof Error ? error.message : "Something went wrong. Try again.";
-      patchFlow({ stage: "failed", message: msg });
-      toast.error("Verification failed", { description: msg });
+      patchFlow({
+        stage: "failed",
+        message: EZ_NOT_FOUND_MESSAGE,
+        duplicate: false,
+      });
+      toast.error("Deposit not verified", { description: EZ_NOT_FOUND_MESSAGE });
+    } catch (cause) {
+      if (!isAlive()) return;
+      const msg = cause instanceof Error ? cause.message : EZ_UNREACHABLE_MESSAGE;
+      patchFlow({ stage: "failed", message: msg, duplicate: false });
+      toast.error("Deposit error", { description: msg });
     } finally {
       activePollsRef.current.delete(pollId);
     }
   }
 
-  function getTxTypeClass(type: string) {
-    switch (type) {
-      case "deposit":
-        return "is-deposit";
-      case "purchase":
-        return "is-purchase";
-      case "cashback":
-        return "is-cashback";
-      case "refund":
-        return "is-refund";
-      case "adjustment":
-        return "is-adjustment";
-      default:
-        return "is-deposit";
-    }
-  }
-
   return (
-    <>
-      <div className="dashboard-heading">
-        <span className="eyebrow">YOUR ACCOUNT</span>
-        <h1>HASA Gold Wallet.</h1>
-        <p>
-          eZ Cash deposits are added after provider verification. Admin credits and deductions
-          appear in your transaction history with a reason. Wallet spending is unavailable.
-        </p>
+    <div className="wallet-page-wrapper">
+      {/* Redesigned Premium Header & Quick Stats */}
+      <div className="wallet-header-hero">
+        <div className="wallet-hero-content">
+          <span className="wallet-eyebrow">
+            <Sparkles size={13} /> SECURE STORE BALANCE
+          </span>
+          <h1>HASA Gold Wallet</h1>
+          <p>
+            Instant top-ups with zero checkout friction. Deposit anytime via eZ Cash and checkout
+            directly on any game.
+          </p>
+        </div>
       </div>
 
-      {/* Wallet balance */}
-      <div className="wallet-card-container">
-        <div className="wallet-vip-card">
-          <div className="wallet-card-header">
-            <div>
-              <div className="wallet-badges">
-                <span className="wallet-vip-badge">HASA GOLD WALLET</span>
+      {/* Modern High-End Virtual VIP Card */}
+      <div className="wallet-card-showcase">
+        <div className="wallet-modern-card">
+          <div className="wallet-modern-card-glow" />
+          <div className="wallet-modern-card-pattern" />
+
+          <div className="wallet-modern-card-top">
+            <div className="wallet-modern-chip-box">
+              <div className="wallet-modern-chip">
+                <span className="chip-facet" />
+                <span className="chip-facet" />
               </div>
-              <h2 className="wallet-balance-label">CURRENT BALANCE</h2>
-              <div className="wallet-balance-amount">
-                {walletError ? "Unavailable" : isLoaded ? formatAmount(balance) : "…"}
-              </div>
+              <span className="wallet-contactless">
+                <Lock size={15} />
+              </span>
             </div>
-            <div
-              style={{
-                textAlign: "right",
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "flex-end",
-                gap: "10px",
-              }}
-            >
-              <div className="wallet-card-chip">
-                <div className="chip-line" />
-                <div className="chip-line" />
-                <div className="chip-line" />
-              </div>
-              <span className="wallet-brand">HASA GOLD</span>
+
+            <div className="wallet-modern-brand-tag">
+              <span className="wallet-tag-dot" />
+              <span>HASA GOLD STORE</span>
             </div>
           </div>
-          <div className="wallet-card-footer">
-            <div>
-              <div className="wallet-cardholder-label">Cardholder</div>
-              <div className="wallet-cardholder-name">
-                {user?.name?.toUpperCase() || "YOUR WALLET"}
-              </div>
+
+          <div className="wallet-modern-card-middle">
+            <span className="wallet-modern-balance-label">AVAILABLE BALANCE</span>
+            <div className="wallet-modern-balance-val">
+              {walletError ? "Unavailable" : isLoaded ? formatAmount(balance) : "…"}
             </div>
-            <div style={{ textAlign: "right" }}>
-              <div className="wallet-id-label">Currency</div>
-              <div className="wallet-id-number">LKR</div>
+          </div>
+
+          <div className="wallet-modern-card-bottom">
+            <div className="wallet-modern-user-info">
+              <span className="wallet-meta-label">MEMBER</span>
+              <strong className="wallet-meta-val">
+                {user?.name?.toUpperCase() || "VERIFIED CUSTOMER"}
+              </strong>
+            </div>
+
+            <div className="wallet-modern-curr-info">
+              <span className="wallet-meta-label">CURRENCY</span>
+              <strong className="wallet-meta-val">LKR (Rs.)</strong>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="wallet-info-row">
-        <div className="wallet-info-text">
-          <ShieldCheck size={16} style={{ color: "var(--gold)" }} />
+      {/* Security Reassurance Strip */}
+      <div className="wallet-security-banner">
+        <div className="wallet-sec-icon">
+          <ShieldCheck size={18} />
+        </div>
+        <div className="wallet-sec-copy">
+          <strong>Protected &amp; Audited Wallet</strong>
           <span>
-            Deposits are verified before credit. Admin balance changes include a reason in your
-            history. Wallet-paid top-ups appear as debits in your transaction history.
+            Every deposit and checkout debit is cryptographically verified and recorded in your
+            ledger.
           </span>
         </div>
       </div>
+
       {walletError && (
-        <p role="alert" className="field-error">
+        <div className="admin-error-banner" role="alert">
           {walletError}
-        </p>
+        </div>
       )}
       {walletHistoryError && (
-        <p role="alert" className="field-error">
+        <div className="admin-error-banner" role="alert">
           {walletHistoryError}
-        </p>
-      )}
-      {!isLoaded && <p className="form-hint">Loading wallet data…</p>}
-      {/* ── eZ Cash Deposit ───────────────────────────────────── */}
-      <section className="dashboard-section" style={{ marginTop: "28px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "18px" }}>
-          <div
-            style={{
-              width: "44px",
-              height: "44px",
-              borderRadius: "12px",
-              background: "rgba(16,185,129,.12)",
-              color: "#10b981",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
-              fontSize: "22px",
-            }}
-          >
-            📱
-          </div>
-          <div>
-            <h2 style={{ fontSize: "17px", margin: 0, fontWeight: 800 }}>Deposit via eZ Cash</h2>
-            <p
-              style={{
-                margin: 0,
-                fontSize: "12px",
-                color: "var(--muted-foreground)",
-                marginTop: "3px",
-              }}
-            >
-              Send payment to the store eZ Cash number, then paste your reference number below. The
-              credited amount is verified automatically.
-            </p>
-          </div>
         </div>
+      )}
 
-        <EzCashGuide />
-
-        <form
-          onSubmit={handleEzCashDeposit}
-          style={{
-            background: "var(--card)",
-            border: "2px solid #10b981",
-            borderRadius: "16px",
-            padding: "24px",
-            marginTop: "20px",
-          }}
-        >
-          {/* Store eZ Cash number — where to send the payment */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: "14px",
-              flexWrap: "wrap",
-              padding: "14px 16px",
-              borderRadius: "12px",
-              background: "rgba(16,185,129,.1)",
-              border: "1px dashed #10b981",
-              marginBottom: "18px",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0 }}>
-              <span style={{ fontSize: "20px" }} aria-hidden="true">
-                📲
-              </span>
-              <div style={{ minWidth: 0 }}>
-                <span
-                  style={{
-                    display: "block",
-                    fontSize: "11px",
-                    fontWeight: 700,
-                    letterSpacing: "0.06em",
-                    textTransform: "uppercase",
-                    color: "var(--muted-foreground)",
-                  }}
-                >
-                  Store eZ Cash Number
-                </span>
-                <strong
-                  style={{
-                    display: "block",
-                    fontSize: "20px",
-                    fontWeight: 800,
-                    fontFamily: "monospace",
-                    letterSpacing: "0.06em",
-                    color: "var(--foreground)",
-                  }}
-                >
-                  {STORE_EZCASH_NUMBER_DISPLAY}
-                </strong>
+      {/* Main Deposit Box */}
+      <section className="wallet-deposit-section">
+        <div className="wallet-deposit-card">
+          <div className="wallet-deposit-header">
+            <div className="wallet-dep-title-row">
+              <div className="wallet-dep-icon-wrap">
+                <Smartphone size={22} />
+              </div>
+              <div>
+                <h2>Direct eZ Cash Deposit</h2>
+                <p>Transfer funds to our verified business number and paste the 14-digit RN.</p>
               </div>
             </div>
+            <span className="wallet-instant-pill">
+              <Sparkles size={12} /> Instant Auto-Credit
+            </span>
+          </div>
+
+          {/* Business Account Pay-To Info Card */}
+          <div className="wallet-payto-box">
+            <div className="wallet-payto-details">
+              <span className="wallet-payto-tag">TRANSFER PAYMENT TO</span>
+              <strong className="wallet-payto-num">{ezStoreNumber}</strong>
+              <span className="wallet-payto-name">Account Name: {ezStoreName}</span>
+            </div>
+
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={copyStoreNumber}
-              aria-label="Copy store eZ Cash number"
-              style={{ whiteSpace: "nowrap", fontWeight: 700 }}
+              className="wallet-copy-btn"
             >
               {ezNumberCopied ? (
                 <>
-                  <CheckCircle2 size={14} style={{ marginRight: "6px" }} />
-                  Copied
+                  <CheckCircle2 size={14} />
+                  Copied!
                 </>
               ) : (
-                <>Copy number</>
+                <>
+                  <Copy size={14} />
+                  Copy Number
+                </>
               )}
             </Button>
           </div>
 
-          <label
-            htmlFor="ez-rn"
-            style={{ display: "block", fontSize: "13px", fontWeight: 700, marginBottom: "8px" }}
-          >
-            eZ Cash Reference Number (RN)
-          </label>
-          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginBottom: "10px" }}>
-            <div style={{ position: "relative", flex: 1, minWidth: "180px" }}>
-              <input
-                ref={ezRnInputRef}
-                id="ez-rn"
-                type="text"
-                inputMode="numeric"
-                autoComplete="off"
-                placeholder="e.g. 20261007123456"
-                value={ezRn}
-                maxLength={14}
-                onChange={(e) => {
-                  setEzRn(e.target.value.replace(/\D/g, "").slice(0, 14));
-                  setEzFieldError(null);
-                }}
-                onBlur={() => {
-                  if (ezRn && ezRn.length !== 14) {
-                    setEzFieldError("The eZ Cash RN must be exactly 14 digits.");
-                  }
-                }}
-                disabled={ezFormBusy}
-                aria-invalid={ezFieldError ? true : undefined}
-                aria-describedby={ezFieldError ? "ez-rn-error" : "ez-rn-help"}
-                style={{
-                  width: "100%",
-                  padding: "12px 64px 12px 16px",
-                  borderRadius: "10px",
-                  border: `1px solid ${ezFieldError ? "var(--destructive)" : "var(--border)"}`,
-                  background: "var(--background)",
-                  color: "var(--foreground)",
-                  fontSize: "15px",
-                  fontWeight: 600,
-                  fontFamily: "monospace",
-                  letterSpacing: "0.05em",
-                }}
-              />
-              <span
-                aria-hidden="true"
-                style={{
-                  position: "absolute",
-                  right: "12px",
-                  top: "50%",
-                  transform: "translateY(-50%)",
-                  fontSize: "10.5px",
-                  color: "var(--muted-foreground)",
-                  fontVariantNumeric: "tabular-nums",
-                }}
+          {/* Form */}
+          <form onSubmit={handleEzCashDeposit} className="wallet-rn-form">
+            <label htmlFor="ez-rn" className="wallet-rn-label">
+              14-Digit eZ Cash Reference Number (RN)
+            </label>
+
+            <div className="wallet-input-row">
+              <div className="wallet-input-wrap">
+                <input
+                  ref={ezRnInputRef}
+                  id="ez-rn"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  placeholder="e.g. 20261107123456"
+                  value={ezRn}
+                  maxLength={14}
+                  onChange={(e) => {
+                    setEzRn(e.target.value.replace(/\D/g, "").slice(0, 14));
+                    setEzFieldError(null);
+                  }}
+                  onBlur={() => {
+                    if (ezRn && ezRn.length !== 14) {
+                      setEzFieldError("The eZ Cash RN must be exactly 14 digits.");
+                    }
+                  }}
+                  disabled={ezFormBusy}
+                  className={`wallet-rn-field ${ezFieldError ? "is-invalid" : ""}`}
+                />
+                <span className="wallet-input-counter">{ezRn.length}/14</span>
+              </div>
+
+              <Button
+                type="submit"
+                disabled={ezFormBusy || !ezRn.trim()}
+                className="wallet-submit-btn"
               >
-                {ezRn.length}/14
-              </span>
+                {ezFormBusy ? (
+                  <>
+                    <Loader2 size={15} className="animate-spin" />
+                    Verifying…
+                  </>
+                ) : (
+                  <>
+                    <PlusCircle size={15} />
+                    Verify &amp; Add Funds
+                  </>
+                )}
+              </Button>
             </div>
-            <Button
-              type="submit"
-              disabled={ezFormBusy || !ezRn.trim()}
-              style={{
-                height: "46px",
-                padding: "0 24px",
-                borderRadius: "10px",
-                fontSize: "14px",
-                fontWeight: 800,
-                background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-                color: "#fff",
-                whiteSpace: "nowrap",
-                border: "none",
-                cursor: "pointer",
-              }}
-            >
-              {ezFormBusy ? (
-                <>
-                  <Loader2 className="loading-spin" size={15} style={{ marginRight: "8px" }} />
-                  Verifying…
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 size={15} style={{ marginRight: "8px" }} />
-                  Verify & Credit
-                </>
-              )}
-            </Button>
-          </div>
-          {ezFieldError && (
-            <p
-              id="ez-rn-error"
-              role="alert"
-              style={{ margin: "0 0 10px", fontSize: "11.5px", color: "var(--destructive)" }}
-            >
-              {ezFieldError}
+
+            {ezFieldError && (
+              <p className="wallet-field-err" role="alert">
+                {ezFieldError}
+              </p>
+            )}
+
+            <p className="wallet-helper-hint">
+              Send the amount from your eZ Cash wallet/app to the number above, then enter the
+              14-digit RN from your confirmation SMS.
             </p>
-          )}
-          <p
-            id="ez-rn-help"
-            style={{ margin: 0, fontSize: "11px", color: "var(--muted-foreground)" }}
-          >
-            Send the payment amount to <strong>{STORE_EZCASH_NUMBER_DISPLAY}</strong> from your eZ
-            Cash wallet, then paste the reference number (RN) from your eZ Cash SMS confirmation
-            above. We check automatically and confirm most payments within 6 seconds.
-          </p>
-        </form>
+          </form>
+
+          {/* Pre-deposit guidelines */}
+          <div className="wallet-guide-dropdown">
+            <EzCashGuide />
+          </div>
+        </div>
       </section>
 
-      {/* ── Other methods (coming soon) ── */}
-      <section className="dashboard-section" style={{ marginTop: "16px" }}>
-        <h3
-          style={{
-            fontSize: "13px",
-            fontWeight: 700,
-            marginBottom: "10px",
-            color: "var(--muted-foreground)",
-            textTransform: "uppercase",
-            letterSpacing: "0.05em",
-          }}
-        >
-          Other deposit methods unavailable
-        </h3>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
-            gap: "10px",
-          }}
-        >
+      {/* Coming Soon Alternative Gateways */}
+      <section className="wallet-methods-row">
+        <span className="wallet-methods-title">Upcoming Deposit Methods</span>
+        <div className="wallet-methods-grid">
           {otherMethods.map((m) => (
-            <div
-              key={m.id}
-              style={{
-                padding: "14px",
-                borderRadius: "12px",
-                border: "1px dashed var(--border)",
-                background: "var(--background)",
-                display: "flex",
-                alignItems: "center",
-                gap: "12px",
-                opacity: 0.55,
-              }}
-            >
-              <span style={{ color: "var(--muted-foreground)" }}>{m.icon}</span>
+            <div key={m.id} className="wallet-method-card">
+              <span className="wallet-method-icon">{m.icon}</span>
               <div>
-                <strong style={{ fontSize: "13px", display: "block" }}>{m.name}</strong>
-                <span style={{ fontSize: "11px", color: "var(--muted-foreground)" }}>{m.sub}</span>
+                <strong>{m.name}</strong>
+                <small>{m.sub}</small>
               </div>
             </div>
           ))}
         </div>
       </section>
 
-      {/* ── Transaction Ledger ── */}
+      {/* Real-time Ledger */}
+      <section className="wallet-ledger-section">
+        <div className="wallet-ledger-head">
+          <div className="wallet-ledger-title">
+            <History size={18} />
+            <h2>Transaction Ledger</h2>
+          </div>
+          <span className="wallet-ledger-count">{transactions.length} records</span>
+        </div>
+
+        {transactions.length ? (
+          <div className="wallet-ledger-list">
+            {transactions.map((tx, idx) => {
+              const isPositive = tx.amount > 0;
+              const cls = getTxTypeClass(tx.type);
+              return (
+                <div key={tx.id ? `${tx.id}-${idx}` : `tx-${idx}`} className="wallet-ledger-item">
+                  <div className="wallet-ledger-left">
+                    <div className={`wallet-ledger-icon-bubble ${cls}`}>
+                      {isPositive ? <ArrowDownLeft size={18} /> : <ArrowUpRight size={18} />}
+                    </div>
+
+                    <div className="wallet-ledger-info">
+                      <div className="wallet-ledger-top-line">
+                        <strong className="wallet-ledger-tx-name">{tx.title}</strong>
+                        <span className={`wallet-ledger-pill ${cls}`}>{tx.type}</span>
+                      </div>
+
+                      <div className="wallet-ledger-meta-line">
+                        {tx.type === "purchase" ? (
+                          <>
+                            <span className="wallet-order-tag">
+                              Order #{tx.referenceNumber || tx.id}
+                            </span>{" "}
+                            · {tx.method} · {tx.date}
+                          </>
+                        ) : (
+                          <>
+                            <code>{tx.id}</code> · {tx.method} · {tx.date}
+                          </>
+                        )}
+                      </div>
+
+                      {tx.reason && (
+                        <div className="wallet-ledger-note">
+                          <span>{tx.type === "adjustment" ? "Reason:" : "Package:"}</span>
+                          <strong>{tx.reason}</strong>
+                        </div>
+                      )}
+
+                      {tx.type !== "purchase" && tx.referenceNumber && (
+                        <div className="wallet-ledger-note">
+                          <span>RN:</span>
+                          <code>{tx.referenceNumber}</code>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="wallet-ledger-right">
+                    <span
+                      className={`wallet-ledger-amount ${isPositive ? "is-credit" : "is-debit"}`}
+                    >
+                      {isPositive ? `+${formatAmount(tx.amount)}` : formatAmount(tx.amount)}
+                    </span>
+                    <span className="wallet-ledger-status">● {tx.status}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="wallet-empty-ledger">
+            <Wallet size={36} />
+            <h3>No transactions recorded yet</h3>
+            <p>Once you make a deposit or pay for top-ups, detailed records will appear here.</p>
+          </div>
+        )}
+      </section>
+
+      {/* Dialog for eZ Cash progress */}
       <EzCashDepositDialog
         open={ezDialogOpen}
         stage={ezFlow?.stage ?? "submitting"}
@@ -739,85 +686,6 @@ export function DashboardWallet() {
           requestAnimationFrame(() => ezRnInputRef.current?.focus());
         }}
       />
-
-      {/* ── Transaction Ledger ── */}
-      <section className="dashboard-section" style={{ marginTop: "28px" }}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginBottom: "18px",
-          }}
-        >
-          <h2 style={{ fontSize: "17px", fontWeight: 800, margin: 0 }}>Transaction Ledger</h2>
-          <span style={{ fontSize: "12px", color: "var(--muted-foreground)", fontWeight: 600 }}>
-            {transactions.length} entries
-          </span>
-        </div>
-
-        {transactions.length ? (
-          <div className="wallet-tx-grid">
-            {transactions.map((tx) => {
-              const isPositive = tx.amount > 0;
-              const cls = getTxTypeClass(tx.type);
-              return (
-                <div key={tx.id} className="wallet-tx-card">
-                  <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-                    <div className={`wallet-tx-icon ${cls}`}>
-                      <ArrowDownLeft size={20} />
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "8px",
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        <strong className="wallet-tx-title">{tx.title}</strong>
-                        <span className={`wallet-tx-badge ${cls}`}>{tx.type}</span>
-                      </div>
-                      <div className="wallet-tx-meta">
-                        <code>{tx.id}</code> · {tx.method} · {tx.date}
-                      </div>
-                      {tx.reason && (
-                        <div className="wallet-tx-reference wallet-tx-reason">
-                          <strong>{tx.type === "adjustment" ? "Reason" : "Package"}</strong>
-                          <span>{tx.reason}</span>
-                        </div>
-                      )}
-                      {tx.type !== "adjustment" && (
-                        <div className="wallet-tx-reference">
-                          <span>
-                            {tx.type === "purchase" ? "Order number" : "Reference number"}
-                          </span>
-                          <code>{tx.referenceNumber || "Not available"}</code>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div style={{ textAlign: "right", minWidth: "110px" }}>
-                    <div
-                      className={`wallet-tx-amount ${isPositive ? "is-positive" : "is-negative"}`}
-                    >
-                      {isPositive ? `+${formatAmount(tx.amount)}` : formatAmount(tx.amount)}
-                    </div>
-                    <div className="wallet-tx-status">● {tx.status}</div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="dashboard-empty">
-            <Wallet />
-            <h2>No transactions yet</h2>
-            <p>Deposit via eZ Cash to get started.</p>
-          </div>
-        )}
-      </section>
-    </>
+    </div>
   );
 }

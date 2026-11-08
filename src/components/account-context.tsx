@@ -33,14 +33,13 @@ import {
 } from "firebase/auth";
 import { FirebaseSetupError, getFirebaseAuth, isFirebaseConfigured } from "@/lib/firebase";
 import { ensureUserDoc, fetchUserDoc, updateUserDoc } from "@/lib/firestore";
-import { ensureMemberId } from "@/api/memberId";
-import { sendVerificationEmail } from "@/api/sendVerificationEmail";
+import { ensureApiMemberId, sendApiVerificationEmail, completeApiProfile } from "@/lib/api-client";
 import type { ThemeChoice, UserDoc } from "@/lib/firestore-schema";
 
 export type { ThemeChoice } from "@/lib/firestore-schema";
 
 const profileSchema = z.object({
-  email: z.string().email().max(254),
+  email: z.email().max(254),
   emailVerified: z.boolean(),
   name: z.string().min(1).max(80),
   phoneNumber: z.string().max(32).optional(),
@@ -49,7 +48,7 @@ const profileSchema = z.object({
     .string()
     .regex(/^HG-[A-HJ-NP-Z2-9]{8}$/)
     .optional(),
-  players: z.record(z.string().max(64)),
+  players: z.record(z.string(), z.string().max(64)),
   recent: z.array(z.string()).max(4),
   favorites: z.array(z.string()).max(100),
   notifications: z.object({ updates: z.boolean(), reminders: z.boolean() }),
@@ -83,7 +82,39 @@ type Account = {
   viewGame: (id: string) => Promise<void>;
 };
 
-const Context = createContext<Account | null>(null);
+/** Stable no-op sentinel used as the context default.
+ *  This prevents the "Account provider is missing" crash when WalletBridge
+ *  is re-mounted during TanStack Router error-boundary recovery before the
+ *  provider tree is fully in place. All async operations are no-ops so they
+ *  can't be accidentally triggered; `ready: false` signals uninitialized state. */
+const noop = () => Promise.resolve();
+const noopBool = () => Promise.resolve(false as const);
+
+const ACCOUNT_SENTINEL: Account = {
+  ready: false,
+  profileCompletionInProgress: false,
+  uid: null,
+  user: null,
+  linkedProviders: [],
+  photoUrl: null,
+  theme: "system",
+  resolvedTheme: "light",
+  setTheme: noop,
+  signup: noop,
+  login: noop,
+  loginWithGoogle: noop,
+  linkGoogle: noopBool,
+  googleLinkEmail: null,
+  linkGoogleWithPassword: noop,
+  completeProfile: noop,
+  logout: noop,
+  resetPassword: noop,
+  changePassword: noop,
+  update: noop,
+  viewGame: noop,
+};
+
+const Context = createContext<Account>(ACCOUNT_SENTINEL);
 
 function usernameFromEmail(email: string): string {
   return email.split("@")[0] || "Player";
@@ -173,7 +204,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
             return;
           }
 
-          if (uidRef.current === firebaseUser.uid) return;
+          if (uidRef.current === firebaseUser.uid && user !== null) return;
 
           uidRef.current = firebaseUser.uid;
           setUid(firebaseUser.uid);
@@ -196,7 +227,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
             if (!userDoc) throw new Error("Your account profile could not be loaded.");
             if (!userDoc.memberId) {
               memberIdAssignmentFailed = true;
-              await ensureMemberId({ data: { idToken: await firebaseUser.getIdToken() } });
+              await ensureApiMemberId();
               userDoc = await fetchUserDoc(firebaseUser.uid);
               if (!userDoc?.memberId) throw new Error("Your customer ID could not be assigned.");
             }
@@ -251,7 +282,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     const assignMemberId = async () => {
       attempt += 1;
       try {
-        await ensureMemberId({ data: { idToken: await firebaseUser.getIdToken() } });
+        await ensureApiMemberId();
         const userDoc = await fetchUserDoc(uid);
         if (!userDoc?.memberId) throw new Error("Your customer ID could not be loaded.");
         if (active) setUser(profileFromAccount(firebaseUser, userDoc));
@@ -311,12 +342,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     const credential = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
     try {
       if (trimmedName) await updateProfile(credential.user, { displayName: trimmedName });
-      await sendVerificationEmail({
-        data: {
-          idToken: await credential.user.getIdToken(),
-          appOrigin: window.location.origin,
-        },
-      });
+      await sendApiVerificationEmail(window.location.origin);
     } finally {
       if (auth.currentUser?.uid === credential.user.uid) await firebaseSignOut(auth);
     }
@@ -330,12 +356,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     await reload(credential.user);
     if (!credential.user.emailVerified) {
       try {
-        await sendVerificationEmail({
-          data: {
-            idToken: await credential.user.getIdToken(),
-            appOrigin: window.location.origin,
-          },
-        });
+        await sendApiVerificationEmail(window.location.origin);
       } finally {
         if (auth.currentUser?.uid === credential.user.uid) await firebaseSignOut(auth);
       }
@@ -349,11 +370,6 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       );
     }
     await credential.user.getIdToken(true);
-    await ensureUserDoc({
-      uid: credential.user.uid,
-      email: credential.user.email ?? "",
-      displayName: credential.user.displayName ?? usernameFromEmail(credential.user.email ?? ""),
-    });
   }, []);
 
   const loginWithGoogle = useCallback(async (remember: boolean) => {
@@ -472,15 +488,11 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       }
       setProfileCompletionInProgress(true);
       try {
-        const { completeCustomerProfile } = await import("@/api/completeCustomerProfile");
         await updateProfile(currentUser, { displayName: trimmedName });
-        await completeCustomerProfile({
-          data: {
-            idToken: await currentUser.getIdToken(),
-            displayName: trimmedName,
-            phoneNumber: normalizedPhone.replace(/[\s()-]/g, ""),
-            acceptedTerms: true,
-          },
+        await completeApiProfile({
+          displayName: trimmedName,
+          phoneNumber: normalizedPhone.replace(/[\s()-]/g, ""),
+          acceptedTerms: true,
         });
         setUser({
           ...currentProfile,

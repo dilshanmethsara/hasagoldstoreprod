@@ -1,7 +1,9 @@
-- Use Firebase Authentication for identity and the shared Firestore data-access modules for persistent customer data. Do not add application business data to localStorage or sessionStorage.
-- Scope protected customer documents and queries to the authenticated Firebase UID. Client Firestore rules must keep role, wallet balance, catalog, order payment, and fulfillment fields protected.
+- Use Firebase Authentication for identity only. Persistent customer data, catalog, orders, wallets and admin settings live in Neon PostgreSQL and are reached through the Express API at `https://api.hasagold.store`. Do not add application business data to localStorage or sessionStorage.
+- Never connect the browser directly to Neon, Supabase Storage service keys, or any server-only secret. Server functions call the API with the caller's Firebase ID token; scope every customer query to the authenticated Firebase UID.
+- Keep role, wallet balance, catalog, order payment, and fulfillment fields protected. The API reads all prices from Neon and no customer-facing route may set payment or fulfillment status.
 - Create orders only through the trusted server operation. Orders remain pending and unpaid until a separately configured, verified payment process exists.
 - Do not report game Player ID verification, payment, wallet spending, account sales, top-up delivery, or admin management as successful unless a real authorized integration completed the operation.
-- Keep catalog data in Firestore. Do not add fabricated production products, profiles, orders, transactions, or fallback catalog data.
+- Keep catalog data in Neon, served live through the API. Do not add fabricated production products, profiles, orders, transactions, or fallback catalog data. Never re-run the legacy Firestore migration against the live database.
 - Keep ephemeral interface state in React. Firebase Authentication may manage its own session persistence.
 - Preserve the existing route structure and UI. Update user-facing availability text whenever backend functionality is incomplete.
+- Do not cache application data. The API sends `Cache-Control: no-store` and the client fetches with `cache: "no-store"` and `staleTime: 0` so admin edits appear immediately.

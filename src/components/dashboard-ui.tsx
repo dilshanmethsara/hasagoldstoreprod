@@ -1,5 +1,6 @@
-﻿import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import {
   LayoutGrid,
   Receipt,
@@ -21,6 +22,16 @@ import {
   Mail,
   BadgeCheck,
   MailWarning,
+  Diamond,
+  ShieldCheck,
+  CheckCircle2,
+  Copy,
+  Check,
+  Clock,
+  AlertCircle,
+  Gamepad2,
+  RefreshCw,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -30,15 +41,15 @@ import { GameGrid, EmptyState } from "./store-ui";
 import { useStore } from "./store-context";
 import { useAccount } from "./account-context";
 import { FormField, PasswordField } from "./account-ui";
-import { useGames, useUserOrders } from "@/lib/firestore";
+import { fetchStoreSettings, useGames, useUserOrders } from "@/lib/firestore";
+import { methodRequiresProof } from "@/lib/payment-methods";
 import type { OrderDoc } from "@/lib/firestore-schema";
-import { getFirebaseAuth } from "@/lib/firebase";
 import {
-  getOrderPaymentProofUploadToken,
-  getOrderPaymentProofUrl,
-  submitOrderPaymentProof,
-} from "@/api/createOrder";
-import { pollNexauraTopup } from "@/api/nexauraTopups";
+  getApiProofUploadToken,
+  viewApiProof,
+  submitApiProof,
+  fetchApiTopupStatus,
+} from "@/lib/api-client";
 import { uploadPaymentProof } from "@/lib/supabase-storage";
 
 const links = [
@@ -240,7 +251,27 @@ export function DashboardOverview() {
 
 export function DashboardOrders() {
   const { uid } = useAccount();
+  const { data: storeSettings } = useQuery({
+    queryKey: ["storeSettings"],
+    queryFn: fetchStoreSettings,
+    staleTime: 0,
+  });
+  const paymentMethods = storeSettings?.paymentMethods ?? [];
+  /**
+   * Whether an order's payment method asks the customer for a receipt.
+   * Uses the admin's per-method flag; a method that is missing from settings
+   * (or still loading) keeps the historical behaviour of expecting a receipt.
+   */
+  function methodNeedsProof(methodId?: string | null): boolean {
+    if (!methodId || methodId === "wallet") return false;
+    const configured = paymentMethods.find((method) => method.id === methodId);
+    return configured ? methodRequiresProof(configured) : true;
+  }
   const [selectedOrder, setSelectedOrder] = useState<OrderDoc | null>(null);
+  const [orderFilter, setOrderFilter] = useState<
+    "all" | "completed" | "processing" | "action_needed"
+  >("all");
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [proofSubmittedOrderIds, setProofSubmittedOrderIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -249,72 +280,50 @@ export function DashboardOrders() {
   const [proofViewUrl, setProofViewUrl] = useState<string | null>(null);
   const [proofViewLoading, setProofViewLoading] = useState(false);
   const {
-    data: orderPages,
+    data: ordersData,
     isLoading: ordersLoading,
     error: ordersError,
     refetch: retryOrders,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
-    isFetchNextPageError,
     refetch,
   } = useUserOrders(uid);
-  const firestoreOrders = orderPages?.pages.flatMap((page) => page.orders) ?? [];
+  const firestoreOrders = ordersData?.orders ?? [];
   const [nexauraStatuses, setNexauraStatuses] = useState<
-    Record<string, { status: string; note: string | null; error?: string }>
+    Record<
+      string,
+      {
+        status: string;
+        note: string | null;
+        issueType?: "stock_issue" | "system_issue" | null | undefined;
+        providerOrderId?: string | null | undefined;
+        error?: string | undefined;
+      }
+    >
   >({});
   const activeNexauraOrderIds = firestoreOrders
-    .filter(
-      (order) =>
-        order.gameSlug === "free-fire" &&
-        order.paymentStatus === "paid" &&
-        typeof order.nexauraOrderId === "string" &&
-        !["completed", "failed", "refunded"].includes(
-          nexauraStatuses[order.orderId]?.status ?? order.nexauraStatus ?? "",
-        ),
-    )
+    .filter((order) => {
+      if (order.gameSlug !== "free-fire" || order.paymentStatus !== "paid") return false;
+      const currentLive = nexauraStatuses[order.orderId]?.status ?? order.status ?? "";
+      return !["completed", "failed", "refunded"].includes(currentLive.toLowerCase());
+    })
     .map((order) => order.orderId);
   const activeNexauraOrderIdsKey = activeNexauraOrderIds.join(",");
 
   useEffect(() => {
     if (!activeNexauraOrderIdsKey) return;
-    const currentUser = getFirebaseAuth().currentUser;
-    if (!currentUser) return;
     const orderIds = activeNexauraOrderIdsKey.split(",");
     let active = true;
     let timeout: ReturnType<typeof setTimeout>;
     const poll = async () => {
-      let idToken: string;
-      try {
-        idToken = await currentUser.getIdToken();
-      } catch (cause) {
-        if (!active) return;
-        const message =
-          cause instanceof Error ? cause.message : "Sign in again to check your Nexaura order.";
-        setNexauraStatuses((current) => ({
-          ...current,
-          ...Object.fromEntries(
-            orderIds.map((orderId) => [
-              orderId,
-              {
-                status: current[orderId]?.status ?? "processing",
-                note: current[orderId]?.note ?? null,
-                error: message,
-              },
-            ]),
-          ),
-        }));
-        timeout = setTimeout(() => void poll(), 4000);
-        return;
-      }
       const results = await Promise.all(
         orderIds.map(async (orderId) => {
           try {
-            const result = await pollNexauraTopup({ data: { idToken, orderId } });
+            const { fetchApiTopupStatus } = await import("@/lib/api-client");
+            const result = await fetchApiTopupStatus(orderId);
             return { orderId, result };
           } catch (cause) {
             return {
               orderId,
+              result: null as null,
               error:
                 cause instanceof Error
                   ? cause.message
@@ -330,16 +339,30 @@ export function DashboardOrders() {
           results.map(({ orderId, result, error }) => [
             orderId,
             result
-              ? { status: result.status, note: result.note }
+              ? {
+                  status: result.status,
+                  note: result.note,
+                  issueType: result.issueType ?? null,
+                  providerOrderId: result.orderId ?? null,
+                }
               : {
                   status: current[orderId]?.status ?? "processing",
                   note: current[orderId]?.note ?? null,
-                  error,
+                  issueType: current[orderId]?.issueType ?? null,
+                  ...(error ? { error } : {}),
                 },
           ]),
         ),
       }));
-      if (results.some(({ result }) => !result || !result.terminal)) {
+      // If any order reached a terminal status or completed, refetch the orders list
+      // so the order card shows the updated status from Firestore.
+      const anyTerminal = results.some(
+        ({ result }) => result?.terminal === true || result?.status === "completed",
+      );
+      if (anyTerminal) void refetch();
+      if (
+        results.some(({ result }) => !result || (!result.terminal && result.status !== "completed"))
+      ) {
         timeout = setTimeout(() => void poll(), 4000);
       }
     };
@@ -373,27 +396,11 @@ export function DashboardOrders() {
 
   async function resubmitPaymentProof() {
     if (!selectedOrder || !replacementProof) return;
-    const currentUser = getFirebaseAuth().currentUser;
-    if (!currentUser) {
-      toast.error("Sign in again before uploading payment proof.");
-      return;
-    }
     setProofSubmitting(true);
     try {
-      const upload = await getOrderPaymentProofUploadToken({
-        data: {
-          idToken: await currentUser.getIdToken(),
-          orderId: selectedOrder.orderId,
-        },
-      });
+      const upload = await getApiProofUploadToken(selectedOrder.orderId);
       await uploadPaymentProof(upload.signedUrl, replacementProof);
-      await submitOrderPaymentProof({
-        data: {
-          idToken: await currentUser.getIdToken(),
-          orderId: selectedOrder.orderId,
-          fileName: replacementProof.name,
-        },
-      });
+      await submitApiProof(selectedOrder.orderId, replacementProof.name);
       setProofSubmittedOrderIds((current) => new Set(current).add(selectedOrder.orderId));
       setSelectedOrder((current) =>
         current
@@ -419,19 +426,9 @@ export function DashboardOrders() {
 
   async function viewPaymentProof() {
     if (!selectedOrder) return;
-    const currentUser = getFirebaseAuth().currentUser;
-    if (!currentUser) {
-      toast.error("Sign in again to view your payment proof.");
-      return;
-    }
     setProofViewLoading(true);
     try {
-      const result = await getOrderPaymentProofUrl({
-        data: {
-          idToken: await currentUser.getIdToken(),
-          orderId: selectedOrder.orderId,
-        },
-      });
+      const result = await viewApiProof(selectedOrder.orderId);
       setProofViewUrl(result.url);
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : "Could not open payment proof.");
@@ -439,18 +436,106 @@ export function DashboardOrders() {
       setProofViewLoading(false);
     }
   }
+
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(text);
+    toast.success(`${label} copied to clipboard`);
+    setTimeout(() => {
+      setCopiedId((prev) => (prev === text ? null : prev));
+    }, 2000);
+  };
+
+  const filteredOrders = firestoreOrders.filter((ord) => {
+    if (orderFilter === "all") return true;
+    const displayStatus = getDisplayOrderStatus(ord, nexauraStatuses[ord.orderId]?.status);
+    if (orderFilter === "completed") {
+      return displayStatus === "completed" || ord.paymentStatus === "paid";
+    }
+    if (orderFilter === "processing") {
+      return displayStatus === "processing" || displayStatus === "pending";
+    }
+    if (orderFilter === "action_needed") {
+      return (
+        methodNeedsProof(ord.paymentMethod) &&
+        !proofSubmittedOrderIds.has(ord.orderId) &&
+        ["unpaid", "failed", "proof_rejected"].includes(ord.paymentStatus)
+      );
+    }
+    return true;
+  });
+
+  const actionNeededCount = firestoreOrders.filter(
+    (ord) =>
+      methodNeedsProof(ord.paymentMethod) &&
+      !proofSubmittedOrderIds.has(ord.orderId) &&
+      ["unpaid", "failed", "proof_rejected"].includes(ord.paymentStatus),
+  ).length;
+
   return (
     <>
-      <Heading
-        title="Your orders."
-        description="All your top-up orders placed through HASA GOLD STORE."
-      />
+      <div className="dashboard-orders-header">
+        <Heading
+          title="Order History"
+          description="Track, monitor top-up status, and manage proof submissions in real-time."
+        />
+        {firestoreOrders.length > 0 && (
+          <div className="dashboard-orders-filter-bar">
+            <div className="dashboard-filter-tabs">
+              <button
+                type="button"
+                className={`dashboard-filter-tab ${orderFilter === "all" ? "is-active" : ""}`}
+                onClick={() => setOrderFilter("all")}
+              >
+                All Orders
+                <span className="tab-count">{firestoreOrders.length}</span>
+              </button>
+              <button
+                type="button"
+                className={`dashboard-filter-tab ${orderFilter === "completed" ? "is-active" : ""}`}
+                onClick={() => setOrderFilter("completed")}
+              >
+                Completed
+              </button>
+              <button
+                type="button"
+                className={`dashboard-filter-tab ${orderFilter === "processing" ? "is-active" : ""}`}
+                onClick={() => setOrderFilter("processing")}
+              >
+                In Progress
+              </button>
+              {actionNeededCount > 0 && (
+                <button
+                  type="button"
+                  className={`dashboard-filter-tab is-alert ${orderFilter === "action_needed" ? "is-active" : ""}`}
+                  onClick={() => setOrderFilter("action_needed")}
+                >
+                  Action Required
+                  <span className="tab-count tab-alert-count">{actionNeededCount}</span>
+                </button>
+              )}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="dashboard-refresh-btn"
+              onClick={() => void retryOrders()}
+            >
+              <RefreshCw size={13} className={ordersLoading ? "animate-spin" : ""} />
+              Refresh
+            </Button>
+          </div>
+        )}
+      </div>
       {ordersLoading ? (
         <div className="dashboard-skeleton" aria-busy="true">
-          <div className="skeleton skeleton-block" style={{ height: 80 }} />
-          <div className="skeleton skeleton-block" style={{ height: 80, marginTop: 12 }} />
+          <div className="skeleton skeleton-block" style={{ height: 110, borderRadius: 14 }} />
+          <div
+            className="skeleton skeleton-block"
+            style={{ height: 110, marginTop: 14, borderRadius: 14 }}
+          />
         </div>
-      ) : ordersError && !orderPages ? (
+      ) : ordersError && !ordersData ? (
         <div className="dashboard-empty">
           <Receipt />
           <h2>Couldn't load orders</h2>
@@ -460,115 +545,265 @@ export function DashboardOrders() {
           </Button>
         </div>
       ) : firestoreOrders && firestoreOrders.length > 0 ? (
-        <div className="dashboard-order-list">
-          {firestoreOrders.map((ord) => (
-            <article className="dashboard-order-card" key={ord.orderId}>
-              <div className="order-card-header">
-                <div className="order-card-title">
-                  <span className="order-package-name">{ord.packageName}</span>
-                  <div className="order-status-badges">
-                    <span
-                      className={`order-status-badge ${statusTone(
-                        getDisplayOrderStatus(ord, nexauraStatuses[ord.orderId]?.status),
-                      )}`}
-                    >
-                      {statusLabel(
-                        getDisplayOrderStatus(ord, nexauraStatuses[ord.orderId]?.status),
-                      )}
-                    </span>
-                    <span className={`order-status-badge ${statusTone(ord.paymentStatus)}`}>
-                      {statusLabel(ord.paymentStatus)}
-                    </span>
-                  </div>
-                </div>
-                <div className="order-card-price">
-                  {ord.currency === "LKR" ? "LKR" : "Rs."} {ord.pricePkr.toLocaleString()}
-                </div>
-              </div>
-              <div className="order-card-body">
-                <div className="order-info-row">
-                  <div className="order-info-item">
-                    <span className="order-info-label">Game</span>
-                    <span className="order-info-value">{ord.gameName}</span>
-                  </div>
-                  <div className="order-info-item">
-                    <span className="order-info-label">Player ID</span>
-                    <span className="order-info-value">{ord.playerId}</span>
-                  </div>
-                  <div className="order-info-item">
-                    <span className="order-info-label">Order ID</span>
-                    <span className="order-info-value order-id-text">{ord.orderId}</span>
-                  </div>
-                  <div className="order-info-item">
-                    <span className="order-info-label">Date</span>
-                    <span className="order-info-value">
-                      {ord.createdAt
-                        ? new Date(ord.createdAt).toLocaleDateString()
-                        : "Date unavailable"}
-                    </span>
-                  </div>
-                </div>
-                {ord.gameSlug === "free-fire" && (
-                  <div className="order-info-row">
-                    <div className="order-info-item">
-                      <span className="order-info-label">Nexaura top-up</span>
-                      <span className="order-info-value">
-                        {nexauraStatuses[ord.orderId]?.status ??
-                          ord.nexauraStatus ??
-                          "Awaiting payment"}
-                        {nexauraStatuses[ord.orderId]?.note
-                          ? ` · ${nexauraStatuses[ord.orderId]?.note ?? ""}`
-                          : ord.nexauraNote
-                            ? ` · ${ord.nexauraNote}`
-                            : ""}
-                        {nexauraStatuses[ord.orderId]?.error
-                          ? ` · ${nexauraStatuses[ord.orderId]?.error ?? ""}`
-                          : ""}
-                      </span>
+        filteredOrders.length === 0 ? (
+          <div className="dashboard-empty" style={{ padding: "40px 20px" }}>
+            <Receipt />
+            <h2>No orders match this filter</h2>
+            <p>Try switching filter tabs or check back later.</p>
+            <Button variant="outline" size="sm" onClick={() => setOrderFilter("all")}>
+              Show all orders
+            </Button>
+          </div>
+        ) : (
+          <div className="dashboard-order-list">
+            {filteredOrders.map((ord) => {
+              const liveStatus = (
+                nexauraStatuses[ord.orderId]?.status ??
+                ord.status ??
+                ""
+              ).toLowerCase();
+              const isTerminal = ["completed", "failed", "refunded"].includes(liveStatus);
+              const isPolling =
+                ord.gameSlug === "free-fire" && ord.paymentStatus === "paid" && !isTerminal;
+
+              const rawNote = String(
+                nexauraStatuses[ord.orderId]?.note || ord.nexauraNote || ord.nexauraLastError || "",
+              );
+              const isInsufficient = /insufficient|balance|credit|402/i.test(rawNote);
+              const issueType =
+                nexauraStatuses[ord.orderId]?.issueType ??
+                (liveStatus === "completed"
+                  ? null
+                  : !ord.nexauraOrderId && !nexauraStatuses[ord.orderId]?.providerOrderId
+                    ? isInsufficient
+                      ? "stock_issue"
+                      : "system_issue"
+                    : null);
+
+              const displayStatus =
+                liveStatus === "completed" ? "completed" : getDisplayOrderStatus(ord, liveStatus);
+
+              const formattedDate = ord.createdAt
+                ? new Date(ord.createdAt).toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                  })
+                : "Recent";
+
+              const needsProof =
+                methodNeedsProof(ord.paymentMethod) &&
+                !proofSubmittedOrderIds.has(ord.orderId) &&
+                ["unpaid", "failed", "proof_rejected"].includes(ord.paymentStatus);
+
+              return (
+                <article
+                  className={`dashboard-order-card modern-order-card ${isPolling ? "is-polling" : ""} ${needsProof ? "needs-attention" : ""}`}
+                  key={ord.orderId}
+                >
+                  <div className="modern-order-header">
+                    <div className="modern-order-game">
+                      <div className="modern-game-avatar">
+                        {ord.gameSlug === "free-fire" ? (
+                          <Diamond size={18} className="game-avatar-icon text-amber-400" />
+                        ) : (
+                          <Gamepad2 size={18} className="game-avatar-icon text-amber-400" />
+                        )}
+                      </div>
+                      <div className="modern-game-meta">
+                        <div className="modern-package-name-row">
+                          <h4 className="modern-package-name">{ord.packageName}</h4>
+                          <span className="modern-game-name">{ord.gameName}</span>
+                        </div>
+                        <div className="modern-order-submeta">
+                          <span className="modern-date-badge">
+                            <Clock size={12} />
+                            {formattedDate}
+                          </span>
+                          <button
+                            type="button"
+                            className="modern-copy-badge"
+                            title="Click to copy Order ID"
+                            onClick={() => copyToClipboard(ord.orderId, "Order ID")}
+                          >
+                            <span className="id-label">ID:</span>
+                            <span className="id-val">{ord.orderId.slice(0, 10)}...</span>
+                            {copiedId === ord.orderId ? (
+                              <Check size={11} className="copy-icon-done text-emerald-400" />
+                            ) : (
+                              <Copy size={11} className="copy-icon" />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="modern-order-status-box">
+                      <div className="modern-order-price">
+                        <span className="price-curr">{ord.currency === "LKR" ? "LKR" : "Rs."}</span>
+                        <span className="price-num">{ord.pricePkr.toLocaleString()}</span>
+                      </div>
+                      <div className="order-status-badges">
+                        {liveStatus === "completed" ? (
+                          <span className="order-status-badge modern-pill is-success">
+                            <CheckCircle2 size={11} />
+                            Top-Up Completed
+                          </span>
+                        ) : isPolling ? (
+                          issueType === "stock_issue" ? (
+                            <span className="order-polling-badge modern-pill is-stock-badge">
+                              <AlertTriangle size={11} className="text-amber-400 animate-pulse" />
+                              Stock Delay · Queued
+                            </span>
+                          ) : issueType === "system_issue" ? (
+                            <span className="order-polling-badge modern-pill is-system-badge">
+                              <AlertTriangle size={11} className="text-amber-400 animate-pulse" />
+                              Server Delay · Queued
+                            </span>
+                          ) : (
+                            <span className="order-polling-badge modern-pill">
+                              <span className="order-polling-spinner" />
+                              Top-Up In Progress
+                            </span>
+                          )
+                        ) : (
+                          <span
+                            className={`order-status-badge modern-pill ${statusTone(displayStatus)}`}
+                          >
+                            <span className="status-indicator-dot" />
+                            {statusLabel(displayStatus)}
+                          </span>
+                        )}
+                        <span
+                          className={`order-status-badge modern-pill ${statusTone(ord.paymentStatus)}`}
+                        >
+                          {ord.paymentStatus === "paid" ? (
+                            <CheckCircle2 size={11} />
+                          ) : (
+                            <Clock size={11} />
+                          )}
+                          {statusLabel(ord.paymentStatus)}
+                        </span>
+                      </div>
                     </div>
                   </div>
-                )}
-              </div>
-              <div className="order-card-footer">
-                <div className="order-card-actions">
-                  {ord.paymentMethod === "ezcash" &&
-                    !proofSubmittedOrderIds.has(ord.orderId) &&
-                    ["unpaid", "failed", "proof_rejected"].includes(ord.paymentStatus) && (
+
+                  {/* Stock queue / server delay notice banner */}
+                  {isPolling && issueType === "stock_issue" && (
+                    <div className="modern-order-alert-strip stock-alert">
+                      <AlertTriangle
+                        size={14}
+                        className="text-amber-400 flex-shrink-0 animate-pulse"
+                      />
+                      <span>
+                        Game diamond stock is temporarily queued · Automated delivery completing
+                        shortly
+                      </span>
+                      <span className="live-poll-indicator" title="Live checking every 4s" />
+                    </div>
+                  )}
+                  {isPolling && issueType === "system_issue" && (
+                    <div className="modern-order-alert-strip system-alert">
+                      <AlertTriangle
+                        size={14}
+                        className="text-amber-400 flex-shrink-0 animate-pulse"
+                      />
+                      <span>
+                        Game server connection delay · System retrying delivery automatically
+                      </span>
+                      <span className="live-poll-indicator" title="Live checking every 4s" />
+                    </div>
+                  )}
+
+                  <div className="modern-order-body">
+                    <div className="modern-details-grid">
+                      <div className="modern-detail-chip">
+                        <span className="chip-label">Player ID / Account</span>
+                        <div className="chip-content">
+                          <span className="chip-val font-mono">{ord.playerId}</span>
+                          <button
+                            type="button"
+                            className="chip-copy-btn"
+                            title="Copy Player ID"
+                            onClick={() => copyToClipboard(ord.playerId, "Player ID")}
+                          >
+                            {copiedId === ord.playerId ? (
+                              <Check size={12} className="text-emerald-400" />
+                            ) : (
+                              <Copy size={12} />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="modern-detail-chip">
+                        <span className="chip-label">Payment Method</span>
+                        <div className="chip-content">
+                          <span className="chip-val capitalize">
+                            {paymentMethods.find((m) => m.id === ord.paymentMethod)?.name ||
+                              (ord.paymentMethod === "ezcash"
+                                ? "eZ Cash / Bank Transfer"
+                                : ord.paymentMethod)}
+                          </span>
+                        </div>
+                      </div>
+
+                      {ord.gameSlug === "free-fire" && (
+                        <div className="modern-detail-chip modern-detail-chip-full">
+                          <span className="chip-label">Automated Delivery Status</span>
+                          <div className="chip-content">
+                            <span className="chip-val">
+                              {liveStatus === "completed"
+                                ? "Delivered successfully to game account"
+                                : issueType === "stock_issue"
+                                  ? "Stock temporarily queued · Delivery in progress"
+                                  : issueType === "system_issue"
+                                    ? "Game server connection delay · Delivery in progress"
+                                    : isPolling
+                                      ? "Dispatched to game server · Delivery in progress"
+                                      : statusLabel(liveStatus)}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="modern-order-footer">
+                    <div className="modern-footer-left">
+                      {needsProof && (
+                        <div className="modern-proof-warning">
+                          <AlertCircle size={14} className="text-amber-400" />
+                          <span>Slip proof awaiting submission</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="modern-footer-right">
+                      {needsProof && (
+                        <Button
+                          className="modern-submit-proof-btn"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => setSelectedOrder(ord)}
+                        >
+                          Submit Proof
+                        </Button>
+                      )}
                       <Button
-                        className="order-submit-proof-btn"
-                        variant="secondary"
+                        className="modern-view-btn"
+                        variant="outline"
                         size="sm"
                         onClick={() => setSelectedOrder(ord)}
                       >
-                        Submit proof
+                        <Eye size={14} /> View Details
                       </Button>
-                    )}
-                  <Button
-                    className="order-view-btn"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setSelectedOrder(ord)}
-                  >
-                    <Eye size={15} /> View details
-                  </Button>
-                </div>
-              </div>
-            </article>
-          ))}
-          {hasNextPage && (
-            <Button
-              variant="outline"
-              onClick={() => void fetchNextPage()}
-              disabled={isFetchingNextPage}
-            >
-              {isFetchingNextPage
-                ? "Loading orders…"
-                : isFetchNextPageError
-                  ? "Retry loading orders"
-                  : "Load older orders"}
-            </Button>
-          )}
-        </div>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )
       ) : (
         <div className="dashboard-empty">
           <Receipt />
@@ -591,157 +826,355 @@ export function DashboardOrders() {
           }
         }}
       >
-        <DialogContent className="order-detail-dialog">
+        <DialogContent className="order-detail-dialog modern-detail-dialog">
           {selectedOrder && (
-            <>
-              <div className="order-detail-heading">
-                <span className="order-detail-icon">
-                  <Receipt size={20} />
-                </span>
-                <div>
-                  <span className="eyebrow">ORDER DETAILS</span>
-                  <DialogTitle>{selectedOrder.packageName}</DialogTitle>
-                  <DialogDescription>{selectedOrder.gameName} top-up order</DialogDescription>
+            <div className="order-detail-sheet modern-detail-sheet">
+              {/* ── Premium Modal Header ── */}
+              <div className="modern-modal-header">
+                <div className="modern-modal-header-top">
+                  <div className="modern-modal-game-pill">
+                    <span className="modern-modal-game-icon">
+                      {selectedOrder.gameSlug === "free-fire" ? (
+                        <Diamond size={13} className="text-amber-400" />
+                      ) : (
+                        <Gamepad2 size={13} className="text-amber-400" />
+                      )}
+                    </span>
+                    <span>{selectedOrder.gameName}</span>
+                  </div>
+                  <div className="modern-modal-ref-pill">
+                    <span className="ref-prefix">REF:</span>
+                    <span className="ref-val font-mono">{selectedOrder.orderId}</span>
+                    <button
+                      type="button"
+                      className="ref-copy-btn"
+                      title="Copy Reference ID"
+                      onClick={() => copyToClipboard(selectedOrder.orderId, "Order Reference")}
+                    >
+                      {copiedId === selectedOrder.orderId ? (
+                        <Check size={11} className="text-emerald-400" />
+                      ) : (
+                        <Copy size={11} />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <DialogTitle className="modern-modal-title">
+                  {selectedOrder.packageName}
+                </DialogTitle>
+                <DialogDescription className="modern-modal-subtitle">
+                  Order placed on{" "}
+                  {selectedOrder.createdAt
+                    ? new Date(selectedOrder.createdAt).toLocaleString([], {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                      })
+                    : "recent date"}
+                </DialogDescription>
+
+                {/* Status Badges */}
+                <div className="modern-modal-badges">
+                  <div
+                    className={`modern-status-tag ${statusTone(getDisplayOrderStatus(selectedOrder, nexauraStatuses[selectedOrder.orderId]?.status))}`}
+                  >
+                    <span className="tag-dot" />
+                    <span className="tag-text">
+                      Delivery:{" "}
+                      {statusLabel(
+                        getDisplayOrderStatus(
+                          selectedOrder,
+                          nexauraStatuses[selectedOrder.orderId]?.status,
+                        ),
+                      )}
+                    </span>
+                  </div>
+                  <div className={`modern-status-tag ${statusTone(selectedOrder.paymentStatus)}`}>
+                    <span className="tag-dot" />
+                    <span className="tag-text">
+                      Payment: {statusLabel(selectedOrder.paymentStatus)}
+                    </span>
+                  </div>
                 </div>
               </div>
-              <div className="order-detail-status-row">
-                <span
-                  className={`dashboard-order-status ${statusTone(
-                    getDisplayOrderStatus(
-                      selectedOrder,
-                      nexauraStatuses[selectedOrder.orderId]?.status,
-                    ),
-                  )}`}
-                >
-                  Order:{" "}
-                  {statusLabel(
-                    getDisplayOrderStatus(
-                      selectedOrder,
-                      nexauraStatuses[selectedOrder.orderId]?.status,
-                    ),
-                  )}
-                </span>
-                <span
-                  className={`dashboard-order-status ${statusTone(selectedOrder.paymentStatus)}`}
-                >
-                  Payment: {statusLabel(selectedOrder.paymentStatus)}
-                </span>
-              </div>
-              <section className="order-detail-section">
-                <h3>Player information</h3>
-                <dl className="order-detail-grid">
-                  <div>
-                    <dt>In-game name</dt>
-                    <dd>{selectedOrder.playerName || "Not recorded for this order"}</dd>
-                  </div>
-                  <div>
-                    <dt>Player ID</dt>
-                    <dd className="order-detail-mono">{selectedOrder.playerId}</dd>
-                  </div>
-                  {selectedOrder.playerRegion && (
-                    <div>
-                      <dt>Region</dt>
-                      <dd>{selectedOrder.playerRegion}</dd>
-                    </div>
-                  )}
-                  <div>
-                    <dt>Server</dt>
-                    <dd>{selectedOrder.server || "Not specified"}</dd>
-                  </div>
-                </dl>
-                {!selectedOrder.playerName && (
-                  <p className="order-detail-note">
-                    {selectedOrder.playerNameLookupStatus === "unavailable"
-                      ? "The player-name service was temporarily unavailable when this order was created."
-                      : "Player ID is saved for manual fulfillment and has not been verified with the game publisher."}
-                  </p>
-                )}
-              </section>
-              <section className="order-detail-section">
-                <h3>Purchase summary</h3>
-                <dl className="order-detail-grid">
-                  <div>
-                    <dt>Package</dt>
-                    <dd>{selectedOrder.packageName}</dd>
-                  </div>
-                  <div>
-                    <dt>Quantity</dt>
-                    <dd>
-                      {selectedOrder.amount.toLocaleString()} {selectedOrder.unitLabel}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Total</dt>
-                    <dd className="order-detail-total">
-                      {selectedOrder.currency === "LKR" ? "LKR" : "Rs."}{" "}
+
+              {/* ── Highlighted Price & Overview Card ── */}
+              <div className="modern-overview-card">
+                <div className="overview-metric">
+                  <span className="overview-label">Amount Payable</span>
+                  <div className="overview-price-wrapper">
+                    <span className="overview-currency">LKR</span>
+                    <span className="overview-amount">
                       {selectedOrder.pricePkr.toLocaleString()}
-                    </dd>
+                    </span>
                   </div>
-                  <div>
-                    <dt>Created</dt>
-                    <dd className="order-detail-date">
-                      <CalendarDays size={14} />
-                      {selectedOrder.createdAt
-                        ? new Date(selectedOrder.createdAt).toLocaleString()
-                        : "Date unavailable"}
-                    </dd>
+                </div>
+                <div className="overview-divider" />
+                <div className="overview-metric">
+                  <span className="overview-label">Package Quantity</span>
+                  <span className="overview-value-highlight">
+                    {selectedOrder.amount.toLocaleString()}{" "}
+                    <span className="overview-unit">{selectedOrder.unitLabel}</span>
+                  </span>
+                </div>
+                <div className="overview-divider" />
+                <div className="overview-metric">
+                  <span className="overview-label">Payment Method</span>
+                  <span className="overview-value capitalize">
+                    {paymentMethods.find((m) => m.id === selectedOrder.paymentMethod)?.name ||
+                      (selectedOrder.paymentMethod === "ezcash"
+                        ? "eZ Cash / Bank"
+                        : (selectedOrder.paymentMethod ?? "Online"))}
+                  </span>
+                </div>
+              </div>
+
+              {/* ── Recipient / Player Details Card ── */}
+              <div className="modern-info-card">
+                <div className="modern-info-card-header">
+                  <IdCard size={15} className="text-amber-400" />
+                  <h4>Target Game Account</h4>
+                </div>
+                <div className="modern-keyval-grid">
+                  <div className="modern-keyval-item">
+                    <span className="keyval-label">Player ID / User ID</span>
+                    <div className="keyval-value-row">
+                      <span className="keyval-value font-mono font-bold text-amber-300">
+                        {selectedOrder.playerId}
+                      </span>
+                      <button
+                        type="button"
+                        className="keyval-copy-btn"
+                        title="Copy Player ID"
+                        onClick={() => copyToClipboard(selectedOrder.playerId, "Player ID")}
+                      >
+                        {copiedId === selectedOrder.playerId ? (
+                          <Check size={12} className="text-emerald-400" />
+                        ) : (
+                          <Copy size={12} />
+                        )}
+                      </button>
+                    </div>
                   </div>
-                  <div className="order-detail-wide">
-                    <dt>Order reference</dt>
-                    <dd className="order-detail-mono">{selectedOrder.orderId}</dd>
-                  </div>
-                  <div>
-                    <dt>Payment method</dt>
-                    <dd>
-                      {selectedOrder.paymentMethod ?? "Not recorded"}
-                      {selectedOrder.paymentRecipient ? ` · ${selectedOrder.paymentRecipient}` : ""}
-                    </dd>
-                  </div>
-                  {selectedOrder.paymentProofFileName && (
-                    <div>
-                      <dt>Payment proof</dt>
-                      <dd>{selectedOrder.paymentProofFileName}</dd>
+
+                  {selectedOrder.playerName && (
+                    <div className="modern-keyval-item">
+                      <span className="keyval-label">In-Game Name</span>
+                      <span className="keyval-value">{selectedOrder.playerName}</span>
                     </div>
                   )}
-                </dl>
-                {selectedOrder.paymentProofStoragePath && (
-                  <div className="order-detail-proof">
-                    <Button
-                      variant="outline"
-                      disabled={proofViewLoading}
-                      onClick={() => void viewPaymentProof()}
-                    >
-                      {proofViewLoading ? "Loading receipt…" : "View uploaded receipt"}
-                    </Button>
-                    {proofViewUrl &&
-                      (selectedOrder.paymentProofContentType === "application/pdf" ? (
+                  {selectedOrder.playerRegion && (
+                    <div className="modern-keyval-item">
+                      <span className="keyval-label">Account Region</span>
+                      <span className="keyval-value">{selectedOrder.playerRegion}</span>
+                    </div>
+                  )}
+                  {selectedOrder.server && (
+                    <div className="modern-keyval-item">
+                      <span className="keyval-label">Server / Zone</span>
+                      <span className="keyval-value">{selectedOrder.server}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* ── Nexaura Automated Top-Up Pipeline (Free Fire only) ── */}
+              {selectedOrder.gameSlug === "free-fire" &&
+                (() => {
+                  const liveStatus = (
+                    nexauraStatuses[selectedOrder.orderId]?.status ??
+                    selectedOrder.status ??
+                    ""
+                  ).toLowerCase();
+                  const rawNote = String(
+                    nexauraStatuses[selectedOrder.orderId]?.note ||
+                      selectedOrder.nexauraNote ||
+                      selectedOrder.nexauraLastError ||
+                      "",
+                  );
+                  const isInsufficient = /insufficient|balance|credit|402/i.test(rawNote);
+                  const issueType =
+                    nexauraStatuses[selectedOrder.orderId]?.issueType ??
+                    (liveStatus === "completed"
+                      ? null
+                      : !selectedOrder.nexauraOrderId &&
+                          !nexauraStatuses[selectedOrder.orderId]?.providerOrderId
+                        ? isInsufficient
+                          ? "stock_issue"
+                          : "system_issue"
+                        : null);
+
+                  return (
+                    <div className="modern-info-card">
+                      <div className="modern-info-card-header">
+                        {liveStatus === "completed" ? (
+                          <CheckCircle2 size={16} className="text-emerald-400" />
+                        ) : issueType ? (
+                          <AlertTriangle size={16} className="text-amber-400 animate-pulse" />
+                        ) : (
+                          <RefreshCw size={16} className="text-amber-400 animate-spin" />
+                        )}
+                        <h4>Automated Delivery Pipeline</h4>
+                      </div>
+
+                      {issueType === "stock_issue" && (
+                        <div className="modern-status-alert-box stock-box">
+                          <div className="status-alert-header">
+                            <AlertTriangle size={16} className="text-amber-400" />
+                            <span className="status-alert-title">Game Stock Allocation Queue</span>
+                          </div>
+                          <p className="status-alert-desc">
+                            Your wallet payment is safely verified! High volume on the game server
+                            has placed this top-up in the replenishment queue. Our automated
+                            dispatch will deliver your diamonds shortly — no action is required on
+                            your part.
+                          </p>
+                          <div className="status-alert-footer">
+                            <span className="live-poll-indicator" />
+                            <span className="live-poll-text">
+                              Auto-refreshing status live every 4 seconds
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {issueType === "system_issue" && (
+                        <div className="modern-status-alert-box system-box">
+                          <div className="status-alert-header">
+                            <AlertTriangle size={16} className="text-amber-400" />
+                            <span className="status-alert-title">Game Server Connection Delay</span>
+                          </div>
+                          <p className="status-alert-desc">
+                            Your payment is safely confirmed! The game server is currently
+                            experiencing a connection delay. Our system is continuously retrying and
+                            will credit your diamonds shortly.
+                          </p>
+                          <div className="status-alert-footer">
+                            <span className="live-poll-indicator" />
+                            <span className="live-poll-text">
+                              Auto-refreshing status live every 4 seconds
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {liveStatus === "completed" && (
+                        <div className="modern-status-alert-box success-box">
+                          <div className="status-alert-header">
+                            <CheckCircle2 size={16} className="text-emerald-400" />
+                            <span className="status-alert-title">Delivery Confirmed</span>
+                          </div>
+                          <p className="status-alert-desc">
+                            Your top-up has been completed and credited directly to Player ID{" "}
+                            <strong className="font-mono text-amber-300">
+                              {selectedOrder.playerId}
+                            </strong>
+                            .
+                          </p>
+                        </div>
+                      )}
+
+                      <div className="modern-keyval-grid">
+                        <div className="modern-keyval-item">
+                          <span className="keyval-label">Fulfillment Status</span>
+                          <span
+                            className={`keyval-status-pill ${statusTone(liveStatus === "completed" ? "completed" : issueType ? "pending" : "processing")}`}
+                          >
+                            {liveStatus === "completed"
+                              ? "Delivered Successfully"
+                              : issueType === "stock_issue"
+                                ? "Stock Queued · Resolving"
+                                : issueType === "system_issue"
+                                  ? "Server Delay · Retrying"
+                                  : "Top-Up In Progress"}
+                          </span>
+                        </div>
+                        <div className="modern-keyval-item">
+                          <span className="keyval-label">Live Dispatch Mode</span>
+                          <span className="keyval-value text-muted-foreground">
+                            {selectedOrder.nexauraOrderId ||
+                            nexauraStatuses[selectedOrder.orderId]?.providerOrderId
+                              ? `Ref: #${selectedOrder.nexauraOrderId || nexauraStatuses[selectedOrder.orderId]?.providerOrderId}`
+                              : "Direct Game Server API Connection"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+              {/* ── Payment Proof & Verification ── */}
+              {methodNeedsProof(selectedOrder.paymentMethod) && (
+                <div className="modern-info-card">
+                  <div className="modern-info-card-header">
+                    <ShieldCheck size={15} className="text-amber-400" />
+                    <h4>Payment Verification Slip</h4>
+                  </div>
+
+                  {selectedOrder.paymentProofFileName ? (
+                    <div className="modern-proof-status-card">
+                      <div className="modern-proof-meta">
+                        <Link2 size={14} className="text-amber-400 flex-shrink-0" />
+                        <span
+                          className="modern-proof-name"
+                          title={selectedOrder.paymentProofFileName}
+                        >
+                          {selectedOrder.paymentProofFileName}
+                        </span>
+                      </div>
+                      {selectedOrder.paymentProofStoragePath && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={proofViewLoading}
+                          onClick={() => void viewPaymentProof()}
+                          className="modern-receipt-btn"
+                        >
+                          <Eye size={13} />
+                          {proofViewLoading ? "Loading Receipt…" : "Inspect Receipt"}
+                        </Button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="modern-no-proof-box">
+                      <AlertCircle size={15} className="text-amber-400" />
+                      <span>No bank slip or eZ Cash receipt uploaded yet.</span>
+                    </div>
+                  )}
+
+                  {proofViewUrl && (
+                    <div className="modern-proof-display-frame">
+                      {selectedOrder.paymentProofContentType === "application/pdf" ? (
                         <iframe
                           src={proofViewUrl}
-                          title="Your uploaded eZ Cash payment receipt PDF"
-                          className="order-detail-proof-pdf"
+                          title="Uploaded eZ Cash payment receipt PDF"
+                          className="modern-proof-iframe"
                         />
                       ) : (
                         <img
                           src={proofViewUrl}
-                          alt="Your uploaded eZ Cash payment receipt"
-                          className="order-detail-proof-image"
+                          alt="Uploaded payment receipt slip"
+                          className="modern-proof-img"
                         />
-                      ))}
-                  </div>
-                )}
-              </section>
-              {selectedOrder.paymentMethod === "ezcash" &&
-                ["unpaid", "failed", "proof_rejected"].includes(selectedOrder.paymentStatus) && (
-                  <section className="order-detail-section">
-                    <h3>Submit or replace payment proof</h3>
-                    <label className="admin-form-field">
-                      <span className="admin-field-label">
-                        eZ Cash receipt (JPEG, PNG, WebP, or PDF; up to 5 MB)
-                      </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Upload or Re-upload Section */}
+                  {["unpaid", "failed", "proof_rejected"].includes(selectedOrder.paymentStatus) && (
+                    <div className="modern-upload-dropzone">
+                      <div className="dropzone-header">
+                        <h5>
+                          {selectedOrder.paymentProofFileName
+                            ? "Replace Payment Slip"
+                            : "Upload Payment Slip"}
+                        </h5>
+                        <p>Accepted formats: JPG, PNG, WebP, or PDF (Max 5 MB)</p>
+                      </div>
                       <input
-                        className="admin-form-input"
                         type="file"
                         accept="image/jpeg,image/png,image/webp,application/pdf"
+                        style={{ display: "none" }}
                         onChange={(event) => {
                           const file = event.currentTarget.files?.[0] ?? null;
                           if (
@@ -754,33 +1187,52 @@ export function DashboardOrders() {
                           ) {
                             setReplacementProof(null);
                             event.currentTarget.value = "";
-                            toast.error(
-                              "Choose a non-empty JPEG, PNG, WebP, or PDF file under 5 MB.",
-                            );
+                            toast.error("Choose a valid JPEG, PNG, WebP, or PDF file under 5 MB.");
                             return;
                           }
                           setReplacementProof(file);
                         }}
+                        id="proof-file-input"
                       />
-                    </label>
-                    {replacementProof && (
-                      <p className="form-hint">Selected: {replacementProof.name}</p>
-                    )}
-                    <Button
-                      variant="outline"
-                      disabled={!replacementProof || proofSubmitting}
-                      onClick={() => void resubmitPaymentProof()}
-                    >
-                      {proofSubmitting ? "Uploading proof…" : "Submit payment proof"}
-                    </Button>
-                  </section>
-                )}
-              <p className="order-detail-disclaimer">
-                Payment status is {statusLabel(selectedOrder.paymentStatus)}. Proof submission is
-                not payment confirmation. Statuses are manual records; the website does not transfer
-                or refund money or automatically fulfill top-ups.
-              </p>
-            </>
+                      <div className="dropzone-actions">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          type="button"
+                          className="dropzone-select-btn"
+                          onClick={() => document.getElementById("proof-file-input")?.click()}
+                        >
+                          {replacementProof ? `Selected: ${replacementProof.name}` : "Browse File"}
+                        </Button>
+                        <Button
+                          disabled={!replacementProof || proofSubmitting}
+                          onClick={() => void resubmitPaymentProof()}
+                          className="dropzone-upload-btn"
+                        >
+                          {proofSubmitting ? (
+                            <>
+                              <Loader2 className="animate-spin" size={14} /> Uploading…
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle2 size={14} /> Confirm & Submit Slip
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── Footer / Trust Note ── */}
+              <div className="modern-modal-footer">
+                <p className="modern-modal-disclaimer">
+                  Payments made via eZ Cash or Bank Slip are verified manually by the HASA GOLD
+                  STORE staff before automated game top-ups are credited.
+                </p>
+              </div>
+            </div>
           )}
         </DialogContent>
       </Dialog>

@@ -16,13 +16,12 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import type { CatalogGame, ProductDoc } from "@/lib/firestore-schema";
 import type { PaymentMethodConfig } from "@/lib/firestore-schema";
-import { DEFAULT_PAYMENT_METHODS } from "@/lib/payment-methods";
+import { DEFAULT_PAYMENT_METHODS, methodRequiresProof } from "@/lib/payment-methods";
 import { useAccount } from "./account-context";
-import { verifyFreeFirePlayer } from "@/api/verifyFreeFirePlayer";
-import { verifyBloodStrikePlayer } from "@/api/verifyBloodStrikePlayer";
+import { verifyFreeFirePlayerApi, verifyBloodStrikePlayerApi } from "@/lib/api-client";
 import { getFirebaseAuth } from "@/lib/firebase";
 import { fetchStoreSettings } from "@/lib/firestore";
-import { PRODUCT_CATEGORIES } from "@/lib/firestore-schema";
+import { PRODUCT_CATEGORIES, getCategoriesForGame } from "@/lib/firestore-schema";
 import ezcashLogo from "@/assets/ezcash.jfif";
 import weeklyMembershipArtwork from "@/assets/Neon Free Fire Weekly Membership Crate.png";
 import weeklyLiteMembershipArtwork from "@/assets/weeklylite.png";
@@ -108,10 +107,16 @@ export function GameTopUpOrder({
   // tier (index 2) like the original UI, then the first available package.
   const selectedProduct =
     products?.find((p) => p.id === selectedProductId) ?? products?.[2] ?? products?.[0];
-  const productCategoryGroups = PRODUCT_CATEGORIES.map((category) => ({
-    ...category,
-    products: products?.filter((product) => (product.category ?? "diamonds") === category.id) ?? [],
-  })).filter((category) => category.products.length > 0);
+  const defaultCategory =
+    game.id === "blood-strike" ? "gold" : game.id === "pubg-mobile" ? "uc" : "diamonds";
+  const gameCategories = getCategoriesForGame(game.id);
+  const productCategoryGroups = gameCategories
+    .map((category) => ({
+      ...category,
+      products:
+        products?.filter((product) => (product.category ?? defaultCategory) === category.id) ?? [],
+    }))
+    .filter((category) => category.products.length > 0);
   const pricePkrLabel = selectedProduct ? `Rs. ${selectedProduct.pricePkr.toLocaleString()}` : "—";
 
   useEffect(() => {
@@ -152,16 +157,9 @@ export function GameTopUpOrder({
       setValidatedPlayerId(null);
       const attempt = ++lookupAttempt.current;
       try {
-        const idToken = await currentUser.getIdToken();
         const result = isFreeFire
-          ? await verifyFreeFirePlayer({ data: { idToken, playerUid: trimmed } })
-          : await verifyBloodStrikePlayer({
-              data: {
-                idToken,
-                playerUid: trimmed,
-                ...(server ? { server } : {}),
-              },
-            });
+          ? await verifyFreeFirePlayerApi(trimmed)
+          : await verifyBloodStrikePlayerApi(trimmed, server || undefined);
         if (lookupAttempt.current !== attempt) return;
         if (result.status === "unavailable") {
           setFreeFireLookup({ status: "unavailable" });
@@ -173,8 +171,8 @@ export function GameTopUpOrder({
           "source" in result ? (result as { source?: unknown }).source : undefined;
         setFreeFireLookup({
           status: "verified",
-          name: result.name,
-          region: result.region,
+          name: result.name ?? "",
+          region: result.region ?? "",
           source: sourceValue === "saved" ? "saved" : "live",
         });
         setValidatedPlayerId(trimmed);
@@ -197,8 +195,11 @@ export function GameTopUpOrder({
     setValidatedPlayerId(trimmed);
     toast.info("Format accepted only. This Player ID has not been verified with game servers.");
   }
-
-  const activePaymentMethods = paymentMethods.filter((method) => method.active);
+  const activePaymentMethods = paymentMethods
+    .filter((method) => method.active)
+    .filter(
+      (method) => !method.games || method.games.length === 0 || method.games.includes(game.id),
+    );
   const selectedPayment =
     activePaymentMethods.find((method) => method.id === paymentMethod) ?? activePaymentMethods[0];
 
@@ -511,6 +512,7 @@ export function GameTopUpOrder({
                       <div className="topup-package-grid">
                         {category.products.map((product) => {
                           const isSelected = selectedProduct?.id === product.id;
+                          const hasCustomImage = Boolean(product.imageUrl?.trim());
                           const isWeeklyMembership =
                             game.id === "free-fire" &&
                             category.id === "memberships" &&
@@ -528,6 +530,7 @@ export function GameTopUpOrder({
                             /monthly|month/i.test(`${product.name} ${product.id}`);
                           const isDiamondPackage = category.id === "diamonds";
                           const hasArtwork =
+                            hasCustomImage ||
                             isWeeklyMembership ||
                             isWeeklyLiteMembership ||
                             isMonthlyMembership ||
@@ -556,13 +559,15 @@ export function GameTopUpOrder({
                                   <img
                                     className="topup-package-artwork"
                                     src={
-                                      isWeeklyLiteMembership
-                                        ? weeklyLiteMembershipArtwork
-                                        : isWeeklyMembership
-                                          ? weeklyMembershipArtwork
-                                          : isMonthlyMembership
-                                            ? monthlyMembershipArtwork
-                                            : diamondPackageArtwork
+                                      product.imageUrl?.trim()
+                                        ? product.imageUrl.trim()
+                                        : isWeeklyLiteMembership
+                                          ? weeklyLiteMembershipArtwork
+                                          : isWeeklyMembership
+                                            ? weeklyMembershipArtwork
+                                            : isMonthlyMembership
+                                              ? monthlyMembershipArtwork
+                                              : diamondPackageArtwork
                                     }
                                     alt=""
                                     loading="lazy"
@@ -633,7 +638,11 @@ export function GameTopUpOrder({
                       aria-pressed={isSelected}
                     >
                       <div className="payment-card-left">
-                        {method.id === "ezcash" ? (
+                        {method.logoUrl ? (
+                          <div className="payment-logo-wrapper">
+                            <img src={method.logoUrl} alt={method.name} className="payment-logo" />
+                          </div>
+                        ) : method.id === "ezcash" ? (
                           <div className="payment-logo-wrapper">
                             <img src={ezcashLogo} alt="eZ Cash" className="payment-logo" />
                           </div>
@@ -643,6 +652,17 @@ export function GameTopUpOrder({
                         <div>
                           <div className="payment-name">{method.name}</div>
                           <div className="payment-sub">{method.sub}</div>
+                          {method.id !== "wallet" && (
+                            <div
+                              className={`payment-receipt-hint ${
+                                methodRequiresProof(method) ? "is-required" : "is-not-required"
+                              }`}
+                            >
+                              {methodRequiresProof(method)
+                                ? "Receipt required"
+                                : "No receipt needed"}
+                            </div>
+                          )}
                         </div>
                       </div>
                       <div className="payment-check-circle">

@@ -179,7 +179,7 @@ export function AccountPage({
     const next: Record<string, string> = {};
     const email = String(data.get("email") || "").trim();
     const password = String(data.get("password") || "");
-    if (!z.string().email().max(254).safeParse(email).success)
+    if (!z.email().max(254).safeParse(email).success)
       next["email"] = "Enter a valid email address.";
     if (!forgot && (password.length < (signup ? 8 : 1) || password.length > 128))
       next["password"] = signup ? "Use at least 8 characters." : "Enter your password.";
@@ -206,7 +206,9 @@ export function AccountPage({
       } else {
         await account.login(email, password, Boolean(data.get("remember")));
         toast.success("Welcome back");
-        await navigate({ to: safeReturn(redirect) });
+        // Ensure account state has populated before transitioning to dashboard
+        const target = safeReturn(redirect);
+        await navigate({ to: target });
       }
     } catch (error) {
       setErrors({ form: friendlyAuthError(error) });
