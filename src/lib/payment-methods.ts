@@ -116,6 +116,13 @@ export function parsePaymentMethods(value: unknown): PaymentMethodConfig[] {
     const accountNumber = readOptionalString(record, "accountNumber");
     if (accountNumber !== null) result.accountNumber = accountNumber;
 
+    // Warning banner is opt-in and never applies to the wallet method.
+    result.warningEnabled = id === "wallet" ? false : record["warningEnabled"] === true;
+    const warningTitle = readOptionalString(record, "warningTitle");
+    if (warningTitle !== null) result.warningTitle = warningTitle;
+    const warningMessage = readOptionalString(record, "warningMessage");
+    if (warningMessage !== null) result.warningMessage = warningMessage;
+
     if (record["games"] !== undefined) {
       result.games = Array.isArray(record["games"])
         ? Array.from(

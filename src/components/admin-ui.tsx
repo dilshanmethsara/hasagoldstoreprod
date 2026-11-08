@@ -3265,6 +3265,79 @@ export function AdminPaymentMethods() {
                       </FormField>
                     </>
                   )}
+                  {!isWallet && (
+                    <fieldset className="admin-warning-scope">
+                      <legend>Checkout warning banner</legend>
+                      <label className="admin-toggle-row">
+                        <input
+                          type="checkbox"
+                          checked={method.warningEnabled === true}
+                          onChange={(event) =>
+                            updateMethod(method.editKey, { warningEnabled: event.target.checked })
+                          }
+                        />
+                        <span className="admin-toggle-copy">
+                          <strong>
+                            {method.warningEnabled === true ? "Banner on" : "Banner off"}
+                          </strong>
+                          <small>
+                            {method.warningEnabled === true
+                              ? "Customers see this warning before paying with this method."
+                              : "No warning banner at checkout."}
+                          </small>
+                        </span>
+                      </label>
+                      {method.warningEnabled === true && (
+                        <>
+                          <FormField
+                            label="Warning title"
+                            hint="Short heading, e.g. “Extra LKR 20 fee”."
+                          >
+                            <input
+                              className="admin-form-input"
+                              value={method.warningTitle ?? ""}
+                              maxLength={120}
+                              placeholder="Remember: +LKR 20 fee"
+                              onChange={(event) =>
+                                updateMethod(method.editKey, { warningTitle: event.target.value })
+                              }
+                            />
+                          </FormField>
+                          <FormField
+                            label="Warning details"
+                            hint="Explain the fee or condition clearly."
+                          >
+                            <textarea
+                              className="admin-form-input admin-form-textarea"
+                              value={method.warningMessage ?? ""}
+                              maxLength={600}
+                              rows={3}
+                              placeholder="When paying with eZ Cash, please add LKR 20 to cover the service fee."
+                              onChange={(event) =>
+                                updateMethod(method.editKey, { warningMessage: event.target.value })
+                              }
+                            />
+                          </FormField>
+                          {(method.warningTitle?.trim() || method.warningMessage?.trim()) && (
+                            <div className="admin-warning-preview" role="status">
+                              <span className="admin-warning-preview-label">Preview</span>
+                              <div className="checkout-warning-banner">
+                                <AlertTriangle size={18} className="checkout-warning-icon" />
+                                <div className="checkout-warning-copy">
+                                  {method.warningTitle?.trim() && (
+                                    <strong>{method.warningTitle.trim()}</strong>
+                                  )}
+                                  {method.warningMessage?.trim() && (
+                                    <p>{method.warningMessage.trim()}</p>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </fieldset>
+                  )}
                   <fieldset className="admin-games-scope">
                     <legend>Available for games</legend>
                     <label className="admin-toggle-row">

@@ -229,6 +229,12 @@ export interface PaymentMethodConfig {
   requiresProof?: boolean;
   /** Game slugs this method is restricted to. Empty / undefined = all games. */
   games?: string[];
+  /** Show a warning banner at checkout for this method (e.g. extra fee notice). */
+  warningEnabled?: boolean;
+  /** Short heading for the warning banner. */
+  warningTitle?: string | null;
+  /** Body copy for the warning banner. */
+  warningMessage?: string | null;
 }
 
 export interface SettingsDoc {

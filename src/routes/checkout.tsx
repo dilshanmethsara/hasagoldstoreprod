@@ -955,6 +955,21 @@ function CheckoutPage() {
                 <div className="checkout-payment-proof">
                   {paymentConfigured ? (
                     <>
+                      {selectedPayment?.warningEnabled === true &&
+                        (selectedPayment.warningTitle?.trim() ||
+                          selectedPayment.warningMessage?.trim()) && (
+                          <div className="checkout-warning-banner" role="alert">
+                            <AlertTriangle size={18} className="checkout-warning-icon" />
+                            <div className="checkout-warning-copy">
+                              {selectedPayment.warningTitle?.trim() && (
+                                <strong>{selectedPayment.warningTitle.trim()}</strong>
+                              )}
+                              {selectedPayment.warningMessage?.trim() && (
+                                <p>{selectedPayment.warningMessage.trim()}</p>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       <div className="ezcash-payment-instructions">
                         <div className="ezcash-instruction-header">
                           <div className="ezcash-logo-wrapper">
