@@ -3030,6 +3030,14 @@ export function AdminPaymentMethods() {
         accountName: method.accountName?.trim() ?? "",
         accountNumber: method.accountNumber?.trim() ?? "",
         games: Array.from(new Set((method.games ?? []).map((game) => game.trim()).filter(Boolean))),
+        // Checkout warning banner. Wallet can never show one, so it is forced off.
+        warningEnabled: id === "wallet" ? false : method.warningEnabled === true,
+        warningTitle:
+          id === "wallet" || !method.warningEnabled ? null : method.warningTitle?.trim() || null,
+        warningMessage:
+          id === "wallet" || !method.warningEnabled
+            ? null
+            : method.warningMessage?.trim() || null,
       };
     });
 
