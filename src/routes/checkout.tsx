@@ -51,29 +51,29 @@ function nexauraStatusLabel(status?: string): string {
   const value = (status ?? "").trim().toLowerCase();
   switch (value) {
     case "":
-      return "Initiating automated dispatch";
+      return "Preparing provider submission";
     case "submitting":
     case "submission_pending":
       return "Connecting to game server";
     case "pending":
     case "queued":
     case "waiting":
-      return "Queued for automated delivery";
+      return "Queued with the top-up provider";
     case "processing":
     case "in_progress":
     case "in-progress":
-      return "Delivering top-up";
+      return "Provider processing top-up";
     case "completed":
     case "success":
-      return "Delivered";
+      return "Provider reports complete";
     case "failed":
-      return "Delivery pending check";
+      return "Needs order review";
     case "refunded":
       return "Delivery cancelled & refunded";
     case "submission_failed":
-      return "Delivery in replenishment queue";
+      return "Provider submission needs review";
     case "submission_unknown":
-      return "Delivery in verification queue";
+      return "Provider status needs verification";
     default:
       return "Processing top-up";
   }
@@ -145,29 +145,29 @@ function NexauraWaitSheet({
   const steps: Array<{ label: string; detail: string; state: "done" | "active" | "pending" }> = [
     {
       label: "Wallet payment",
-      detail: paying ? "Charging your wallet securely" : `${summary.amount} paid`,
+      detail: paying ? "Submitting your wallet order" : `${summary.amount} wallet debit recorded`,
       state: paying ? "active" : "done",
     },
     {
-      label: isStock ? "Stock allocation" : isSystem ? "Server connection" : "Game server dispatch",
+      label: isStock ? "Order review" : isSystem ? "Provider status" : "Provider submission",
       detail: paying
-        ? "Starts as soon as payment clears"
+        ? "Starts after order submission"
         : isStock
-          ? "Stock queued · automated retry active"
+          ? "Queued for order review"
           : isSystem
-            ? "Connection queued · retrying delivery"
+            ? "Awaiting provider status update"
             : providerOrderId
-              ? `Delivery reference #${providerOrderId}`
-              : "Verifying with game server",
+              ? `Provider reference #${providerOrderId}`
+              : "Provider submission not confirmed",
       state: paying ? "pending" : providerOrderId && !isStock && !isSystem ? "done" : "active",
     },
     {
-      label: "Top-up delivered",
+      label: "Top-up status",
       detail: paying
         ? "Waiting for earlier steps"
         : status === "completed"
-          ? "Delivered to account"
-          : `Direct credit to UID ${summary.playerId}`,
+          ? "Provider reports completed"
+          : `Destination UID ${summary.playerId}`,
       state: paying ? "pending" : status === "completed" ? "done" : "pending",
     },
   ];
@@ -192,35 +192,37 @@ function NexauraWaitSheet({
         </div>
         <span className="eyebrow">
           {paying
-            ? "Processing wallet payment"
+            ? "Submitting wallet order"
             : isStock
-              ? "Payment verified · Stock queue"
+              ? "Order needs review"
               : isSystem
-                ? "Payment verified · Server queue"
-                : "Wallet payment received"}
+                ? "Provider update pending"
+                : "Wallet debit recorded"}
         </span>
         <DialogTitle className="receipt-title">
           {paying
             ? "Completing your order"
             : isStock
-              ? "Stock Allocation In Progress"
+              ? "Order queued for review"
               : isSystem
-                ? "Game Server Delay — Queued"
-                : "Top-up in progress"}
+                ? "Provider update pending"
+                : "Provider status pending"}
         </DialogTitle>
         <DialogDescription className="receipt-lead">
           {paying
-            ? "We are confirming your wallet payment and connecting to the game server. This normally takes a few seconds — keep this window open for the result."
+            ? "We are submitting your order and checking its status. Keep this window open to see the latest update."
             : isStock
-              ? "We've safely verified your payment! Game diamond stock is currently queued for allocation. Our automated system completes orders shortly — you can wait here or view your dashboard."
+              ? "Your order could not be confirmed with the provider and is queued for review. Check Orders for updates or contact support with your order reference."
               : isSystem
-                ? "We've safely verified your payment! The game server is experiencing a temporary connection delay. Our system is continuously retrying and will deliver your diamonds shortly."
-                : "Your top-up is being delivered directly to your game account. This window updates automatically in real-time."}
+                ? "The provider has not confirmed this submission. Check Orders for updates or contact support with your order reference."
+                : providerOrderId
+                  ? "The provider accepted the top-up request. Follow its latest status below; acceptance is not delivery confirmation."
+                  : "Your order is being processed. Delivery is not confirmed until the order status reports completion."}
         </DialogDescription>
       </div>
 
       <p className="sr-only" role="status" aria-live="polite">
-        Order status: {paying ? "confirming wallet payment" : statusText}.
+        Order status: {paying ? "submitting wallet order" : statusText}.
       </p>
 
       <ol className="nexaura-steps">
@@ -664,31 +666,32 @@ function CheckoutPage() {
       if (initialIssueType === "stock_issue") {
         toast.info("Stock Allocation Queued", {
           description:
-            "Payment confirmed! Diamond stock is queued and your top-up is completing shortly.",
+            "The provider has not confirmed the top-up submission yet. Check the order status and contact support for help.",
         });
       } else if (initialIssueType === "system_issue") {
         toast.info("Server Connection Delay", {
           description:
-            "Payment confirmed! Game server connection is retrying and will deliver shortly.",
+            "The provider has not confirmed this submission. Track the order in Orders or contact support.",
         });
       } else if (result.topup?.status === "completed") {
-        toast.success("Top-up Complete!", {
-          description: "Free Fire diamonds delivered to your account.",
+        toast.success("Provider reports top-up complete", {
+          description:
+            "The provider marked this top-up completed. Verify the items in your game account.",
         });
       } else if (result.topup?.status === "pending") {
-        toast.info("Order created — top-up processing", {
-          description: "Your order has been queued for automated delivery.",
+        toast.info("Order submitted to provider", {
+          description: "The provider accepted the request. Track its status in your Orders page.",
         });
       }
       if (requiresProof && proofFile) {
         await uploadProof(orderData.id, proofFile);
       } else if (!isNexauraCheckout) {
         toast.success(
-          paymentMethod === "wallet" ? "Wallet payment successful" : "Unpaid order created",
+          paymentMethod === "wallet" ? "Wallet order created" : "Unpaid order created",
           {
             description:
               paymentMethod === "wallet"
-                ? `LKR ${(orderData.pricePkr as number).toLocaleString()} was deducted. Order ${orderData.id} is processing.`
+                ? `LKR ${(orderData.pricePkr as number).toLocaleString()} was deducted from your wallet. Provider status for order ${orderData.id} is shown in Orders.`
                 : `Order ${orderData.id} is pending payment review.`,
           },
         );
@@ -750,7 +753,7 @@ function CheckoutPage() {
           `UID    : ${completedOrder.playerId}\n` +
           `Item   : ${completedOrder.packName}\n` +
           `Payment: ${completedOrder.paymentMethod}\n` +
-          `Status : ${completedOrder.paymentStatus === "paid" ? "Paid from wallet / processing" : completedOrder.paymentStatus === "proof_submitted" ? "Proof submitted / awaiting review" : "Pending / unpaid"}\n` +
+          `Status : ${completedOrder.paymentStatus === "paid" ? "Wallet debit recorded / provider status pending" : completedOrder.paymentStatus === "proof_submitted" ? "Proof submitted / awaiting review" : "Pending / unpaid"}\n` +
           `Total  : ${completedOrder.amount}\n`,
       );
       toast.success("Order details copied");
@@ -796,7 +799,7 @@ function CheckoutPage() {
   const receiptLabel = nexauraStatusLabel(completedOrder?.nexauraStatus);
   const receiptTitle =
     receiptTone === "success"
-      ? "Top-up complete"
+      ? "Provider reports complete"
       : receiptTone === "error"
         ? "Top-up failed"
         : receiptTone === "refund"
@@ -806,13 +809,13 @@ function CheckoutPage() {
             : "Order created";
   const receiptEyebrow =
     receiptTone === "success"
-      ? "Delivery confirmed"
+      ? "Provider reports complete"
       : receiptTone === "error" || receiptTone === "warning"
         ? "Action needed"
         : receiptTone === "refund"
           ? "Provider update"
           : completedOrder?.paymentStatus === "paid"
-            ? "Wallet payment received"
+            ? "Wallet debit recorded"
             : "Order receipt";
 
   return (
@@ -941,7 +944,7 @@ function CheckoutPage() {
                     </h2>
                     <p>
                       {isWalletPayment
-                        ? "Review your balance, then confirm to pay instantly."
+                        ? "Review your balance, then confirm to pay from your wallet."
                         : isManualPayment
                           ? requiresProof
                             ? "Send the exact total, then attach your payment receipt."
@@ -1340,9 +1343,9 @@ function CheckoutPage() {
                       ? "Your order was created, but payment proof was not saved. Retry the upload to submit it."
                       : completedOrder.paymentStatus === "paid"
                         ? receiptTone === "success"
-                          ? "Your top-up has been delivered successfully to your game account."
+                          ? "The provider reports this top-up as completed. Check your game account to verify receipt."
                           : receiptTone === "error"
-                            ? "Automatic delivery encountered an issue. Our support team is completing your order."
+                            ? "The provider reported an issue. Contact support with your order reference for a status check."
                             : receiptTone === "refund"
                               ? "This order was cancelled and refunded back to your wallet. Contact support if you need assistance."
                               : completedOrder.nexauraMessage &&
@@ -1350,7 +1353,7 @@ function CheckoutPage() {
                                     completedOrder.nexauraMessage,
                                   )
                                 ? `Your payment was received. Order note: ${completedOrder.nexauraMessage}`
-                                : "Your wallet payment was received. Your order is being fulfilled."
+                                : "Your wallet debit is recorded. Check the provider status below for fulfillment progress."
                         : "Your order was created. Payment is not confirmed until an administrator reviews your proof."}
                 </DialogDescription>
                 <p className="form-hint">
@@ -1379,7 +1382,7 @@ function CheckoutPage() {
                   <span className={`receipt-status is-${receiptTone}`}>
                     {completedOrder.paymentStatus === "paid"
                       ? receiptTone === "success"
-                        ? "Complete"
+                        ? "Provider reports complete"
                         : receiptTone === "error"
                           ? "Failed"
                           : receiptTone === "refund"
@@ -1408,7 +1411,7 @@ function CheckoutPage() {
                           : "Proof not submitted"
                         : completedOrder.paymentStatus === "paid"
                           ? receiptTone === "success"
-                            ? "Paid from wallet · top-up complete"
+                            ? "Paid from wallet · provider reports complete"
                             : receiptTone === "error"
                               ? "Paid from wallet · top-up failed"
                               : receiptTone === "refund"

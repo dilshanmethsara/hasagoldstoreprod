@@ -101,7 +101,7 @@ function buildSteps(
       label: "eZ Cash confirmation",
       detail:
         stage === "success"
-          ? "Payment verified"
+          ? "Provider verified the reference"
           : stage === "failed"
             ? "Reference not found"
             : stage === "waiting"
@@ -116,7 +116,7 @@ function buildSteps(
           ? `${amountLabel} added to your wallet`
           : stage === "failed"
             ? "No amount was credited"
-            : "Credits automatically after verification",
+            : "Wallet credit is applied after provider verification",
       state: creditStep,
     },
   ];

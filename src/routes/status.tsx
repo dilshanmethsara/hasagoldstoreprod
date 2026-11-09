@@ -22,7 +22,7 @@ export const Route = createFileRoute("/status")({
   head: () =>
     pageHead(
       "Service Status",
-      "Real-time operational status of HASA GOLD STORE servers, payment gateways, and game delivery systems.",
+      "Live API availability and current payment, catalog, and fulfillment disclosures for HASA GOLD STORE.",
     ),
   component: StatusPage,
 });
@@ -115,46 +115,47 @@ function StatusPage() {
           : "is-degraded",
       details: isMaintenance
         ? "Storefront is under routine maintenance. Checkouts temporarily held."
-        : `${activeGamesCount} games active with real-time pricing and package delivery.`,
+        : `${activeGamesCount} games active with live catalog pricing. Fulfillment status depends on the game and provider.`,
       icon: Gamepad2,
     },
     {
       id: "wallet",
       name: "HASA Gold Wallet System",
-      category: "Billing & Escrow",
+      category: "Wallet",
       status: isApiOnline ? "Operational" : "Degraded",
       badgeClass: isApiOnline ? "is-operational" : "is-degraded",
       details:
-        "Instant balance checks, transactional audit ledger, and secure checkout debits active.",
+        "Live wallet balance and transaction history. Wallet debits are recorded when orders are created.",
       icon: Wallet,
     },
     {
       id: "ezcash",
-      name: "eZ Cash Direct Gateway",
+      name: "eZ Cash Receipt Review",
       category: "Payment Processing",
-      status: ezCashConfigured ? "Operational" : "Pending Setup",
-      badgeClass: ezCashConfigured ? "is-operational" : "is-degraded",
+      status: ezCashConfigured ? "Manual review" : "Pending Setup",
+      badgeClass: "is-degraded",
       details: ezCashConfigured
-        ? `Manual and RN deposit channels enabled (${settings?.paymentEzcashNumber}).`
-        : "Store payment details currently being configured by management.",
+        ? `eZ Cash details are available at checkout (${settings?.paymentEzcashNumber}); submitted receipts await administrator review.`
+        : "Store payment details are not currently configured.",
       icon: Smartphone,
     },
     {
       id: "player-lookup",
       name: "Live Player ID Verification",
       category: "Integration",
-      status: isApiOnline ? "Operational" : "Degraded",
-      badgeClass: isApiOnline ? "is-operational" : "is-degraded",
-      details: "Free Fire and Blood Strike in-game Player ID live verification engine active.",
+      status: isApiOnline ? "Provider-dependent" : "Degraded",
+      badgeClass: "is-degraded",
+      details:
+        "Player ID lookup is available for supported Free Fire and Blood Strike accounts when the provider responds.",
       icon: Search,
     },
     {
       id: "account-escrow",
       name: "Game Account Listings & Escrow",
       category: "Marketplace",
-      status: "Operational",
-      badgeClass: "is-operational",
-      details: "Verified inventory listings display and buyer inquiry protection active.",
+      status: "Unavailable",
+      badgeClass: "is-degraded",
+      details: "Account purchase and escrow checkout are not currently available.",
       icon: ShieldCheck,
     },
   ];
@@ -176,7 +177,7 @@ function StatusPage() {
               {isMaintenance
                 ? "SCHEDULED MAINTENANCE"
                 : overallOperational
-                  ? "ALL SYSTEMS OPERATIONAL"
+                  ? "API AND STOREFRONT AVAILABLE"
                   : "SYSTEM INCIDENT DETECTED"}
             </span>
           </div>
@@ -185,7 +186,7 @@ function StatusPage() {
             {isMaintenance
               ? "System Upgrade in Progress"
               : overallOperational
-                ? "All Systems Normal"
+                ? "Store API Available"
                 : "Experiencing Connection Delays"}
           </h1>
 
@@ -193,7 +194,7 @@ function StatusPage() {
             {isMaintenance
               ? "The storefront is currently paused for routine optimization and upgrades. Customer balances and existing orders are safe."
               : overallOperational
-                ? "Real-time automated diagnostic checks confirm that the HASA GOLD STORE API, wallet engine, player lookup, and payment gateways are functioning smoothly."
+                ? "The store API is responding. Payment verification, player lookup and fulfillment depend on their configured providers; check each service below for details."
                 : "Our cloud operations monitor has detected a slowdown or connectivity issue. Our engineers are actively monitoring recovery."}
           </p>
 
@@ -265,11 +266,10 @@ function StatusPage() {
           <CheckCircle2 size={24} />
         </div>
         <div className="status-guarantee-copy">
-          <strong>Automated Monitoring &amp; Security</strong>
+          <strong>API Health Check</strong>
           <p>
-            Health checks poll every 30 seconds across our VPS infrastructure, Firebase
-            Authentication, and payment validation endpoints. Orders and user balances are
-            cryptographically recorded and backed up.
+            The API health endpoint is checked every 30 seconds. This check does not independently
+            verify payment providers, game-player lookups, order fulfillment, or account transfers.
           </p>
         </div>
         <Button asChild variant="outline" size="sm">

@@ -29,10 +29,10 @@ function SupportPage() {
           <h2>Need a little guidance?</h2>
           <p>Start with our frequently asked questions.</p>
           <div className="notice">
-            <strong>Support contact</strong>
+            <strong>Contact our team</strong>
             <br />
-            Official contact details have not been provided yet. No contact channel is currently
-            available.
+            For order help, include your order reference and contact us through the official store
+            channel used for your purchase.
           </div>
           <div style={{ marginTop: "24px", display: "flex", flexDirection: "column", gap: "8px" }}>
             <span

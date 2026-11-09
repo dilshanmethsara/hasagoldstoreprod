@@ -55,9 +55,9 @@ function PrivacyPolicyPage() {
             </span>
             <h1>Privacy Policy</h1>
             <p>
-              This policy describes the data handled by the current website. Firebase Authentication
-              manages sign-in; customer profile and order data is stored in Cloud Firestore. Game
-              passwords are not requested.
+              This policy describes data handled by HASA GOLD STORE. Firebase Authentication manages
+              sign-in; customer, catalog, order, and wallet data is stored in our database and
+              accessed through the store API. Game passwords are never requested.
             </p>
           </div>
           <Button asChild variant="outline" size="sm">
@@ -72,7 +72,7 @@ function PrivacyPolicyPage() {
             <Clock /> Applies to current website
           </span>
           <span className="policy-pill">
-            <ShieldCheck /> Firestore-backed account data
+            <ShieldCheck /> UID-protected account data
           </span>
           <span className="policy-pill">
             <Sparkles /> Account & order data
@@ -95,8 +95,12 @@ function PrivacyPolicyPage() {
           <div className="policy-highlight-icon">
             <Lock size={20} />
           </div>
-          <strong>Order delivery is unavailable</strong>
-          <p>The website does not currently connect to game-provider fulfillment services.</p>
+          <strong>Order fulfillment</strong>
+          <p>
+            Eligible Free Fire orders are submitted to Nexaura only after payment confirmation;
+            provider status does not independently verify in-game receipt. Other games are fulfilled
+            by the team.
+          </p>
         </div>
         <div className="policy-highlight-card">
           <div className="policy-highlight-icon">
@@ -105,8 +109,8 @@ function PrivacyPolicyPage() {
           <strong>Account preferences</strong>
           <p>
             Signed-in users' short HASA member IDs, themes, favorites, saved Player IDs, and
-            notification preferences are stored in Firestore. The Firebase UID remains the internal
-            account key.
+            notification preferences are stored with the account profile. The Firebase UID remains
+            the internal account key.
           </p>
         </div>
         <div className="policy-highlight-card">
@@ -114,9 +118,7 @@ function PrivacyPolicyPage() {
             <ShieldCheck size={20} />
           </div>
           <strong>UID-scoped account data</strong>
-          <p>
-            Firestore customer records and orders are associated with the signed-in Firebase UID.
-          </p>
+          <p>Customer records and orders are associated with the signed-in Firebase UID.</p>
         </div>
       </section>
 
@@ -137,10 +139,7 @@ function PrivacyPolicyPage() {
 
           <div className="policy-sidebar-card">
             <strong>Have privacy questions?</strong>
-            <p>
-              A staffed support contact channel has not been configured. The Support page currently
-              provides informational FAQs only.
-            </p>
+            <p>Please use the contact option shown on the Support page for privacy questions.</p>
             <Button asChild size="sm" className="w-full">
               <Link to="/support">View Support FAQs</Link>
             </Button>
@@ -169,15 +168,14 @@ function PrivacyPolicyPage() {
                   <strong>Order data:</strong> Game, selected product, Player ID, server, catalog
                   price snapshot, selected payment method, payment/order status, payment-proof
                   filename and timestamp, and the authenticated customer's UID. Submitted proof
-                  images are stored privately in Firebase Storage and linked from the order record.
+                  images are stored privately and linked from the order record.
                 </span>
               </li>
               <li>
                 <CheckCircle2 />
                 <span>
-                  <strong>Wallet deposit data:</strong> If eZ Cash deposits are configured, the
-                  submitted reference number, provider deposit ID, verification status, and credited
-                  amount.
+                  <strong>Wallet deposit data:</strong> The submitted reference number, provider
+                  deposit ID, verification status, and credited amount.
                 </span>
               </li>
               <li>
@@ -191,9 +189,10 @@ function PrivacyPolicyPage() {
             <div className="policy-callout">
               <AlertCircle />
               <div>
-                <strong>Service limitation:</strong> eZ Cash proof is reviewed manually and is not
-                payment verification. Game top-up fulfillment is not automated, and Player IDs are
-                not verified with game publishers.
+                <strong>Order processing:</strong> eZ Cash proof must be reviewed before payment is
+                confirmed. Eligible Free Fire orders are submitted to Nexaura after confirmation;
+                provider status does not independently verify in-game receipt. Other games are
+                fulfilled by the team.
               </div>
             </div>
           </section>
@@ -247,7 +246,8 @@ function PrivacyPolicyPage() {
             <p>
               Your game account credentials are <strong>strictly your own</strong>. HASA GOLD STORE
               does not request game passwords. Player IDs entered for orders are stored with the
-              order record and are not verified against game servers:
+              order record. Where available, a third-party lookup can return a player name for the
+              entered ID, but this does not verify account ownership:
             </p>
             <ul className="policy-list">
               <li>
@@ -261,16 +261,17 @@ function PrivacyPolicyPage() {
               <li>
                 <CheckCircle2 />
                 <span>
-                  <strong>No provider delivery:</strong> The website currently has no game-provider
-                  fulfillment integration.
+                  <strong>Provider status:</strong> Eligible Free Fire top-ups are submitted to
+                  Nexaura after payment confirmation. Provider status is tracked in the order but
+                  does not independently confirm in-game receipt.
                 </span>
               </li>
               <li>
                 <CheckCircle2 />
                 <span>
                   <strong>Phishing Warning:</strong> If anyone claiming to represent HASA GOLD STORE
-                  requests your game password, do not disclose it. A staffed support contact is not
-                  currently available on this website.
+                  requests your game password, do not disclose it. Use only the contact options
+                  listed on the Support page.
                 </span>
               </li>
             </ul>
@@ -278,7 +279,8 @@ function PrivacyPolicyPage() {
               <ShieldCheck />
               <div>
                 <strong>Golden Safety Rule:</strong> Never share your game password with anyone. A
-                Player ID is not proof of ownership and is not verified by this website.
+                Player ID lookup may help check the entered ID, but is not proof of account
+                ownership.
               </div>
             </div>
           </section>
@@ -289,9 +291,9 @@ function PrivacyPolicyPage() {
               <h2>Security & Encryption Standards</h2>
             </div>
             <p>
-              Firebase Authentication and Firestore Security Rules provide the configured identity
-              and data-access controls. No client-side admin management or payment-card handling is
-              enabled.
+              Firebase Authentication provides identity. The Express API validates identity and
+              enforces customer and administrator access to database operations. Payment card data
+              is not collected by this website.
             </p>
             <ul className="policy-list">
               <li>
@@ -304,14 +306,15 @@ function PrivacyPolicyPage() {
               <li>
                 <CheckCircle2 />
                 <span>
-                  <strong>Firestore rules:</strong> Customer documents are UID-scoped; clients
-                  cannot write orders, wallet credits, catalog data, or administrative records.
+                  <strong>API authorization:</strong> Customer operations are scoped to the
+                  signed-in UID; clients cannot directly write orders, wallet credits, catalog data,
+                  or administrative records.
                 </span>
               </li>
               <li>
                 <CheckCircle2 />
                 <span>
-                  <strong>Payment data:</strong> Card and bank checkout is not available. Do not
+                  <strong>Payment data:</strong> Card and bank checkout are not offered. Do not
                   enter payment credentials on this website.
                 </span>
               </li>
@@ -326,7 +329,7 @@ function PrivacyPolicyPage() {
             <p>
               The application does not use localStorage or sessionStorage for customer business
               data. Firebase Authentication manages its own session persistence. Signed-in account
-              preferences are stored in Firestore.
+              preferences are stored with the customer account.
             </p>
             <div className="policy-table-wrapper">
               <table className="policy-table">
@@ -352,7 +355,7 @@ function PrivacyPolicyPage() {
                     <td>
                       Stores saved Player IDs, favorites, theme, notifications, and recent games.
                     </td>
-                    <td>Firestore, associated with your Firebase UID</td>
+                    <td>Store database, associated with your Firebase UID</td>
                   </tr>
                   <tr>
                     <td>
@@ -362,7 +365,7 @@ function PrivacyPolicyPage() {
                       Stores orders and payment-proof images associated with your UID for authorized
                       administrators to review.
                     </td>
-                    <td>Firestore and private Firebase Storage</td>
+                    <td>Store database and private proof storage</td>
                   </tr>
                   <tr>
                     <td>
@@ -375,8 +378,8 @@ function PrivacyPolicyPage() {
               </table>
             </div>
             <p>
-              Clearing browser site data may sign you out. Firestore account records are not deleted
-              when browser data is cleared.
+              Clearing browser site data may sign you out. Your account and order records remain on
+              the store service and are not deleted when browser data is cleared.
             </p>
           </section>
 
@@ -386,32 +389,29 @@ function PrivacyPolicyPage() {
               <h2>Game Publishers & Third Parties</h2>
             </div>
             <p>
-              The website uses Firebase Authentication, Cloud Firestore, and private Firebase
-              Storage for accounts, orders, and payment-proof images. The optional Free Fire name
-              lookup sends the entered Player ID to Nexaura; no Player ID is sent to game publishers
-              for top-up fulfillment:
+              Firebase Authentication is used for sign-in. Customer, catalog, order, and wallet data
+              is managed through the HASA GOLD STORE API and its configured database. Payment proof
+              is sent to private storage for review. Supported Player ID lookups and eligible Free
+              Fire order submissions are sent to their configured providers:
             </p>
             <ul className="policy-list">
               <li>
                 <CheckCircle2 />
-                <span>Game-provider integrations: not configured.</span>
+                <span>Free Fire fulfillment: eligible paid orders are submitted to Nexaura.</span>
               </li>
               <li>
                 <CheckCircle2 />
-                <span>Card and bank payment processors: not configured.</span>
+                <span>Card and bank payments are not offered through this website.</span>
+              </li>
+              <li>
+                <CheckCircle2 />
+                <span>Firebase Authentication: account sign-in and identity verification.</span>
               </li>
               <li>
                 <CheckCircle2 />
                 <span>
-                  Firebase Authentication and Firestore: account identity and UID-owned application
-                  data.
-                </span>
-              </li>
-              <li>
-                <CheckCircle2 />
-                <span>
-                  Nexaura: eZ Cash deposit verification or optional Free Fire player-name lookup,
-                  when the relevant server integration is configured.
+                  Nexaura: supported Free Fire Player ID lookup, eligible top-up submission, and eZ
+                  Cash deposit verification.
                 </span>
               </li>
             </ul>
@@ -449,8 +449,8 @@ function PrivacyPolicyPage() {
               <li>
                 <CheckCircle2 />
                 <span>
-                  <strong>Inquiries:</strong> The Support page currently contains FAQs only; a
-                  staffed privacy contact channel has not been configured.
+                  <strong>Inquiries:</strong> Use the contact options listed on the Support page for
+                  privacy questions.
                 </span>
               </li>
             </ul>

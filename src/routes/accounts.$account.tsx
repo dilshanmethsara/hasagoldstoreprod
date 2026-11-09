@@ -139,9 +139,9 @@ function AccountDetailPage() {
               <div>
                 <h3>Purchase unavailable</h3>
                 <p>
-                  This site does not currently provide account verification, payment, or credential
-                  delivery. Listing details are not independently verified. Do not send payment for
-                  this listing.
+                  Account purchase, payment, and credential transfer are unavailable. This is a
+                  catalog listing only; do not send payment for it. Live game top-ups are available
+                  through the game catalog.
                 </p>
               </div>
             </div>
@@ -196,7 +196,7 @@ function AccountDetailPage() {
               </Button>
             </div>
             <p className="spec-disclaimer">
-              Listing only. Purchase processing and support contact are not configured.
+              Catalog listing only. Account purchase is unavailable.
             </p>
           </div>
         </aside>
@@ -275,7 +275,8 @@ function AccountDetailPage() {
         <DialogContent className="inquire-modal">
           <DialogTitle>Account purchase unavailable</DialogTitle>
           <DialogDescription>
-            This website is not currently able to accept account purchase inquiries or payments.
+            Account purchase and payment are unavailable. Browse the live top-up catalog to place a
+            game top-up order.
           </DialogDescription>
           <div className="inquire-account-info">
             <img src={image} alt="" width={80} height={50} />

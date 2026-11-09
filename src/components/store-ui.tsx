@@ -40,12 +40,10 @@ import { useStore } from "./store-context";
 import { AccountMenu, ThemeMenu } from "./account-menu";
 import { useWallet } from "./wallet-context";
 import { useAccount } from "./account-context";
-import hasaLogo from "@/assets/newhasalogo.png";
-
 export function Brand() {
   return (
     <Link to="/" className="brand" aria-label="HASA GOLD STORE home">
-      <img className="brand-logo" src={hasaLogo} alt="" />
+      <img className="brand-logo" src="/favicon.svg" alt="" />
       <span>
         <strong>
           HASA<span className="text-primary"> GOLD</span>
@@ -86,7 +84,7 @@ export function StoreHeader() {
           ? "Store maintenance is in progress; new orders are temporarily disabled."
           : storeSettings?.bannerEnabled && storeSettings.tagline
             ? storeSettings.tagline
-            : "Service notice · eZ Cash proof is reviewed manually; top-up fulfillment is not automated."}
+            : "Live store · Browse available games and place your order today."}
       </div>
       <header className="store-header">
         <div className="container header-inner">
@@ -500,7 +498,8 @@ export function StoreFooter() {
               </span>
             </a>
             <span className="footer-disclaimer">
-              eZ Cash proof review is manual; top-up fulfillment is not automated.
+              Eligible paid Free Fire orders are submitted to Nexaura; other games are fulfilled by
+              our team. Provider acceptance is not delivery confirmation.
             </span>
           </div>
           <div className="footer-bottom-right">
@@ -649,7 +648,8 @@ export function Steps({ full = false }: { full?: boolean }) {
     {
       icon: Check,
       title: "Submit payment proof",
-      description: "eZ Cash receipts are reviewed manually; top-ups are not automated.",
+      description:
+        "For eZ Cash, upload your receipt for review. Eligible paid Free Fire top-ups are submitted to Nexaura; other games are fulfilled by our team.",
     },
   ];
   return (

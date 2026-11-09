@@ -2,17 +2,17 @@ export const faqs = [
   {
     question: "Can I place a top-up order?",
     answer:
-      "If a game and package are available in the live catalog, you can create an order. eZ Cash orders can include a payment receipt image for manual review; proof submission does not confirm payment.",
+      "Choose a game and package from the live catalog to create an order. eZ Cash orders can include a payment receipt for review; proof submission itself does not confirm payment.",
   },
   {
     question: "Will my top-up be delivered?",
     answer:
-      "Paid Free Fire packages configured for Nexaura are submitted automatically after payment is confirmed, and their provider status is shown in your order history. Other games are fulfilled manually. eZ Cash proof must be approved before any paid order is submitted.",
+      "Eligible paid Free Fire orders are submitted to Nexaura, and provider status appears in your order history. Other games are fulfilled by our team. eZ Cash proof must be reviewed before payment confirmation. Provider acceptance is not delivery confirmation.",
   },
   {
     question: "Can I pay with my wallet at checkout?",
     answer:
-      "Yes. Select HASA Gold Wallet at checkout to pay from your available LKR balance. The current catalog price is checked and the balance is deducted securely when the order is created. Configured Free Fire packages are submitted to Nexaura automatically after the deduction.",
+      "Yes. Select HASA Gold Wallet at checkout to pay from your available LKR balance. The current catalog price is checked and the balance is deducted when the order is created. Eligible Free Fire orders are submitted to Nexaura; provider status appears in your order history.",
   },
   {
     question: "Can I buy a game account?",
@@ -27,7 +27,7 @@ export const faqs = [
   {
     question: "How are favorites saved?",
     answer:
-      "Favorites are saved to your Firestore account when you are signed in. While signed out, they remain only for the current page session.",
+      "Favorites are saved to your account when you are signed in. While signed out, they remain only for the current page session.",
   },
 ];
 

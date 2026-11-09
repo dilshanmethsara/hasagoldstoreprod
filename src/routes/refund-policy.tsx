@@ -37,8 +37,8 @@ function RefundPolicyPage() {
             </span>
             <h1>Refund & Cancellation Policy</h1>
             <p>
-              eZ Cash payments use manual proof review. This page explains what order statuses mean;
-              the website does not automatically process transfers or refunds.
+              Clear guidance for eZ Cash receipt review, provider-based Free Fire top-ups, order
+              status, cancellations, and refunds.
             </p>
           </div>
           <Button asChild variant="outline" size="sm">
@@ -75,17 +75,22 @@ function RefundPolicyPage() {
           <div className="policy-highlight-icon">
             <CreditCard size={20} />
           </div>
-          <strong>No automatic payment</strong>
+          <strong>Payment confirmation</strong>
           <p>
-            eZ Cash transfers are manual. Card, bank, and other wallet methods are not connected.
+            eZ Cash payment is confirmed only after its reference or receipt is verified. Wallet
+            orders currently debit the balance at creation; this is not independent provider payment
+            verification.
           </p>
         </div>
         <div className="policy-highlight-card">
           <div className="policy-highlight-icon">
             <RotateCcw size={20} />
           </div>
-          <strong>No refund processing</strong>
-          <p>The website cannot currently issue or reverse a payment.</p>
+          <strong>Refunds require review</strong>
+          <p>
+            Refund requests are reviewed by the store team; submitting a request does not guarantee
+            a refund.
+          </p>
         </div>
       </section>
 
@@ -110,9 +115,12 @@ function RefundPolicyPage() {
               <h2>Top-up orders</h2>
             </div>
             <p>
-              Orders are created pending. For eZ Cash, customers may submit a receipt image; an
-              administrator must verify the transfer and update the payment status. The website
-              cannot automatically issue a refund or deliver an in-game top-up.
+              Orders begin pending. eZ Cash receipts require review before payment is confirmed. The
+              current wallet checkout debits your balance when the order is created. Eligible paid
+              Free Fire orders are submitted to Nexaura only after payment confirmation; provider
+              status does not confirm in-game receipt. Other games are fulfilled by our team.
+              Refunds and cancellations are handled according to the order status and support
+              review. An eZ Cash receipt alone is not payment confirmation.
             </p>
             <div className="policy-callout">
               <AlertTriangle />
@@ -129,15 +137,14 @@ function RefundPolicyPage() {
               <h2>Wallet deposits</h2>
             </div>
             <p>
-              eZ Cash deposits can be credited only when the server-side Nexaura integration is
-              configured and verifies the reference. The website does not currently offer wallet
-              withdrawals, checkout spending, or deposit reversals. Do not submit the same payment
-              reference repeatedly if its status is pending.
+              eZ Cash deposit references are checked through the configured provider before credit
+              is applied. Wallet withdrawals and deposit reversals are not available through
+              checkout. Do not submit the same payment reference repeatedly if its status is
+              pending.
             </p>
             <p>
-              If money was sent but a deposit was not credited, contact the payment provider using
-              the details on your payment confirmation. A staffed store support channel is not
-              currently configured.
+              If money was sent but a deposit was not credited, contact us with the payment
+              reference and your account email so the transaction can be checked.
             </p>
           </section>
 
@@ -147,8 +154,8 @@ function RefundPolicyPage() {
               <h2>Support availability</h2>
             </div>
             <p>
-              The Support page currently provides FAQs only. No ticket submission, refund review,
-              manual fulfillment, or payment dispute workflow is connected.
+              Use the Support page for the available contact and FAQ options. Include your order
+              reference when asking about a payment, cancellation, refund, or fulfillment status.
             </p>
             <Button asChild variant="outline">
               <Link to="/support">

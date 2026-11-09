@@ -21,11 +21,13 @@ function HowPage() {
       />
       <Steps full />
       <div className="notice">
-        <strong>eZ Cash proof is reviewed manually.</strong>
+        <strong>Live orders with clear payment and fulfillment updates.</strong>
         <br />
-        For eZ Cash, follow the payment details at checkout and upload your receipt. Your order
-        remains unconfirmed until an administrator reviews it. Game top-ups are fulfilled manually;
-        submitting proof does not guarantee payment confirmation or delivery.
+        For eZ Cash, follow the checkout payment details and upload your receipt. The order remains
+        unpaid until the transfer is verified. Wallet orders debit the available balance at order
+        creation. Eligible paid Free Fire top-ups are submitted to Nexaura; other games are
+        fulfilled by our team. Track updates in your Orders page. Provider acceptance or a payment
+        receipt alone does not mean an order is delivered.
       </div>
       <Button asChild>
         <Link to="/games">

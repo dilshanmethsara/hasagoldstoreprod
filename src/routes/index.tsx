@@ -22,8 +22,8 @@ import hero from "@/assets/diamond-world.jpg";
 export const Route = createFileRoute("/")({
   head: () =>
     pageHead(
-      "Gaming top-ups",
-      "Browse the HASA GOLD STORE gaming catalog and current order availability.",
+      "HASA GOLD STORE | Premium Game Top-Ups in Sri Lanka",
+      "Browse premium game top-ups and current package availability in Sri Lanka.",
     ),
   component: Index,
 });
@@ -181,7 +181,7 @@ function Index() {
           </h1>
 
           <p className="hero-mobile-sub">
-            Direct player top-ups with manual payment review. Fast, secure &amp; reliable.
+            Browse live game top-ups and follow payment review and order status updates.
           </p>
 
           {/* Quick game chips bar */}
@@ -219,7 +219,7 @@ function Index() {
             </div>
             <div className="hero-mobile-trust-item">
               <Zap size={14} />
-              <span>eZ Cash Instant</span>
+              <span>Secure eZ Cash</span>
             </div>
           </div>
         </div>
@@ -240,7 +240,7 @@ function Index() {
           </div>
           <div className="feature-item-text">
             <h3>Player ID Top-ups</h3>
-            <p>Direct &amp; safe delivery without passwords.</p>
+            <p>Top-ups use a Player ID; check order status to follow fulfillment.</p>
           </div>
         </div>
         <div className="feature-item">
@@ -248,8 +248,8 @@ function Index() {
             <BadgeCheck size={20} />
           </div>
           <div className="feature-item-text">
-            <h3>Accounts Coming Soon</h3>
-            <p>Curated, hand-checked accounts are on the way.</p>
+            <h3>Account purchases unavailable</h3>
+            <p>Account listings and checkout are not available through this store.</p>
           </div>
         </div>
         <div className="feature-item">
@@ -257,8 +257,8 @@ function Index() {
             <Zap size={20} />
           </div>
           <div className="feature-item-text">
-            <h3>eZ Cash Instant</h3>
-            <p>Fast wallet top-up and seamless checkout.</p>
+            <h3>Secure eZ Cash</h3>
+            <p>Submit your receipt and track the review in your account.</p>
           </div>
         </div>
       </div>
@@ -276,8 +276,8 @@ function Index() {
         </div>
         <CatalogGrid />
         <p className="catalog-note">
-          <Info size={12} /> eZ Cash receipts are reviewed manually; top-up fulfillment is not
-          automated.
+          <Info size={12} /> eZ Cash receipts require review before payment confirmation. Eligible
+          paid Free Fire orders are submitted to Nexaura; other games are fulfilled by our team.
         </p>
       </section>
 
@@ -291,8 +291,8 @@ function Index() {
             <h2>Game Account Listings</h2>
             <p>
               {featured.length
-                ? "Current listings from the store catalog. Purchases are not available yet."
-                : "Verified accounts are on the way — top-ups are live today."}
+                ? "Browse current game account listings. Purchase checkout is not available yet."
+                : "Account listings and purchases are unavailable. Browse the live top-up catalog."}
             </p>
           </div>
           {featured.length > 0 && (
@@ -368,21 +368,21 @@ function Index() {
             <span className="accounts-coming-soon-icon" aria-hidden="true">
               <Sparkles size={22} />
             </span>
-            <span className="accounts-coming-soon-tag">Coming soon</span>
-            <h3>Verified game accounts, hand-checked by us</h3>
+            <span className="accounts-coming-soon-tag">Top-ups are available now</span>
+            <h3>Game account marketplace</h3>
             <p>
-              We are curating a small set of verified accounts with escrow-protected handover.
-              Listings will appear here as soon as verification is complete.
+              Account listings and checkout are not available yet. Browse the live top-up catalog to
+              place a game top-up order.
             </p>
             <ul className="accounts-coming-soon-points">
               <li>
-                <ShieldCheck size={14} /> Manually verified before listing
+                <ShieldCheck size={14} /> Game account purchase is unavailable
               </li>
               <li>
-                <BadgeCheck size={14} /> Escrow-protected handover
+                <BadgeCheck size={14} /> Top-up order tracking available
               </li>
               <li>
-                <Gamepad2 size={14} /> Accounts for every supported game
+                <Gamepad2 size={14} /> Live game top-up catalog
               </li>
             </ul>
             <Button asChild size="lg" className="accounts-coming-soon-cta">

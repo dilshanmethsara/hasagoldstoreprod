@@ -105,8 +105,9 @@ function GamePage() {
               ? "Blood Strike IDs are checked through Shop2Topup."
               : game.id === "free-fire"
                 ? "Free Fire IDs can be checked through the available player lookup."
-                : "Player IDs for this game are not checked with game servers."}{" "}
-            eZ Cash receipts are reviewed manually, and top-ups are not automatically fulfilled.
+                : "Player IDs for this game are not checked with a game-provider lookup."}{" "}
+            eZ Cash payments require receipt review. Eligible Free Fire orders are submitted to
+            Nexaura; other games are fulfilled by our team.
           </p>
           <div className="detail-favorite">
             <FavoriteButton game={game} />

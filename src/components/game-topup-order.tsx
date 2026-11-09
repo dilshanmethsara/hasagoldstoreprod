@@ -283,7 +283,7 @@ export function GameTopUpOrder({
           <span>
             {supportsPlayerLookup
               ? freeFireLookup.status === "verified"
-                ? `${game.name} player verified`
+                ? `${game.name} ID lookup completed`
                 : freeFireLookup.status === "unavailable"
                   ? "Lookup temporarily unavailable"
                   : `Verify ${game.name} Player ID`
@@ -296,7 +296,7 @@ export function GameTopUpOrder({
         </div>
         <div className="topup-info-item">
           <AlertCircle size={16} />
-          <span>eZ Cash proof is reviewed manually</span>
+          <span>eZ Cash receipt review required</span>
         </div>
       </div>
 
@@ -320,7 +320,7 @@ export function GameTopUpOrder({
           </span>
           <span className="topup-powered-by-badge" aria-hidden="true">
             <ShieldCheck size={12} strokeWidth={2.6} />
-            Verified
+            Provider
           </span>
         </a>
       )}
@@ -725,7 +725,7 @@ export function GameTopUpOrder({
                 <span className="topup-step-number">4</span>
                 <div>
                   <h2 id="step4-title">Receipt contact</h2>
-                  <p>Order updates are not sent by email or WhatsApp at this time.</p>
+                  <p>Order updates are available in your dashboard.</p>
                 </div>
               </div>
             </div>
@@ -735,9 +735,9 @@ export function GameTopUpOrder({
                 <CheckCircle2 size={17} />
               </span>
               <div className="topup-receipt-copy">
-                <strong>No email or WhatsApp updates</strong>
+                <strong>Track your order in the dashboard</strong>
                 <span>
-                  Track payment review and delivery from Dashboard → Orders after checkout.
+                  Track payment review and provider or team fulfillment status after checkout.
                 </span>
               </div>
             </div>
@@ -818,7 +818,8 @@ export function GameTopUpOrder({
                   <ShieldCheck size={13} /> Order remains unpaid
                 </span>
                 <span>
-                  <AlertCircle size={13} /> Payment and delivery unavailable
+                  <AlertCircle size={13} /> Payment review and fulfillment status vary by method and
+                  game
                 </span>
               </div>
             </div>

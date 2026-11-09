@@ -53,21 +53,21 @@ export async function sendOrderConfirmationEmail(order: OrderConfirmation): Prom
 
   const total = `LKR ${order.totalLkr.toLocaleString()}`;
   const paidFromWallet = order.paymentMethod === "wallet";
-  const paymentLabel = paidFromWallet ? "Paid from wallet" : "Awaiting payment review";
+  const paymentLabel = paidFromWallet ? "Wallet debit recorded" : "Awaiting payment review";
   const paymentSummary = paidFromWallet
-    ? "The order total was deducted from your wallet balance."
+    ? "The order total was deducted from your wallet balance. This does not confirm top-up delivery."
     : "Your order stays unpaid until our team verifies the payment proof you submitted. Payment proof is not payment confirmation.";
   const supportUrl = appBaseUrl();
   const steps = [
     {
       title: "Payment",
       body: paidFromWallet
-        ? "Your wallet has been charged in full. No further action is needed."
+        ? "The wallet debit is recorded. Follow the provider status in your account; this email does not confirm delivery."
         : "We are reviewing the payment proof you submitted. You can resubmit proof from your Orders page if needed.",
     },
     {
       title: "Fulfillment",
-      body: "Configured Free Fire top-ups are submitted to the provider automatically once payment is confirmed. Other games are fulfilled manually by our team.",
+      body: "Eligible paid Free Fire orders are submitted to Nexaura; other games are fulfilled by our team. Provider acceptance is not delivery confirmation.",
     },
     {
       title: "Tracking",
@@ -85,7 +85,7 @@ export async function sendOrderConfirmationEmail(order: OrderConfirmation): Prom
     body:
       renderStatusCards([
         { label: "Order status", value: "Received", tone: "info" },
-        { label: "Payment", value: paymentLabel, tone: paidFromWallet ? "success" : "warning" },
+        { label: "Payment", value: paymentLabel, tone: paidFromWallet ? "info" : "warning" },
       ]) +
       renderSectionLabel("Order details") +
       renderDetailTable([
@@ -97,8 +97,8 @@ export async function sendOrderConfirmationEmail(order: OrderConfirmation): Prom
         { label: "Total", value: total, strong: true },
       ]) +
       renderCallout({
-        tone: paidFromWallet ? "success" : "warning",
-        title: paidFromWallet ? "Payment confirmed" : "Payment not confirmed yet",
+        tone: paidFromWallet ? "info" : "warning",
+        title: paidFromWallet ? "Wallet debit recorded" : "Payment not confirmed yet",
         body: paymentSummary,
       }) +
       renderSectionLabel("What happens next") +
@@ -147,7 +147,7 @@ export async function sendOrderStatusUpdateEmail(order: OrderStatusUpdate): Prom
   const fulfillmentMessage =
     order.gameSlug === "free-fire"
       ? "Free Fire provider status is tracked in your account; this email alone does not confirm completion."
-      : "Other game top-up fulfillment is manual; this email alone does not confirm delivery.";
+      : "Other game top-ups are fulfilled by our team; this email alone does not confirm delivery.";
   const supportUrl = appBaseUrl();
   const heading = (() => {
     switch (order.status) {

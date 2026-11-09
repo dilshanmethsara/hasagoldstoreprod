@@ -3,6 +3,6 @@ import { AdminOverview } from "@/components/admin-ui";
 import { pageHead } from "@/lib/store-data";
 export const Route = createFileRoute("/admin/")({
   head: () =>
-    pageHead("Admin overview", "Live store administration dashboard backed by Firestore."),
+    pageHead("Admin overview", "HASA GOLD STORE administration dashboard backed by the store API."),
   component: AdminOverview,
 });

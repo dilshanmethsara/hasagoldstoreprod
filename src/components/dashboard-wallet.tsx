@@ -40,7 +40,7 @@ const EZ_GUIDE_COPY: Record<
   en: {
     title: "Before you pay with eZ Cash",
     amountLead: "Any amount works.",
-    amountBody: "Whatever you send is added to your wallet once the RN is verified.",
+    amountBody: "A deposit is credited to your wallet only after the provider verifies the RN.",
     steps: [
       "Get the RN number from the eZ Cash confirmation SMS, or the Dialog Genie app → eZ Cash history.",
       <>Every RN has exactly 14 digits. Do not use example or test numbers.</>,
@@ -284,7 +284,7 @@ export function DashboardWallet() {
           duplicate: Boolean(result.duplicate),
         });
         setEzRn("");
-        toast.success("eZ Cash credited!", { description: result.message });
+        toast.success("Provider confirmed deposit", { description: result.message });
         return;
       }
 
@@ -331,7 +331,7 @@ export function DashboardWallet() {
               duplicate: Boolean(poll.duplicate),
             });
             setEzRn("");
-            toast.success("eZ Cash credited!", { description: poll.message });
+            toast.success("Provider confirmed deposit", { description: poll.message });
             return;
           }
 
@@ -376,8 +376,8 @@ export function DashboardWallet() {
           </span>
           <h1>HASA Gold Wallet</h1>
           <p>
-            Instant top-ups with zero checkout friction. Deposit anytime via eZ Cash and checkout
-            directly on any game.
+            Deposit using the active eZ Cash options and track provider verification in your wallet
+            history. Credits are added only after the provider confirms the reference.
           </p>
         </div>
       </div>
@@ -436,8 +436,8 @@ export function DashboardWallet() {
         <div className="wallet-sec-copy">
           <strong>Protected &amp; Audited Wallet</strong>
           <span>
-            Every deposit and checkout debit is cryptographically verified and recorded in your
-            ledger.
+            Deposits are credited after provider verification; wallet debits and deposit updates
+            appear in your transaction history.
           </span>
         </div>
       </div>
@@ -462,12 +462,15 @@ export function DashboardWallet() {
                 <Smartphone size={22} />
               </div>
               <div>
-                <h2>Direct eZ Cash Deposit</h2>
-                <p>Transfer funds to our verified business number and paste the 14-digit RN.</p>
+                <h2>eZ Cash Wallet Deposit</h2>
+                <p>
+                  Transfer funds to the business number shown and enter the 14-digit reference for
+                  provider verification.
+                </p>
               </div>
             </div>
             <span className="wallet-instant-pill">
-              <Sparkles size={12} /> Instant Auto-Credit
+              <Sparkles size={12} /> Credit after verification
             </span>
           </div>
 

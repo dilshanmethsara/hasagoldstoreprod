@@ -399,6 +399,8 @@ export function DashboardOrders() {
   };
   const statusLabel = (status: string) =>
     status.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+  const paymentLabel = (status: string, method: string) =>
+    status === "paid" && method === "wallet" ? "Wallet debit recorded" : statusLabel(status);
   const getDisplayOrderStatus = (order: OrderDoc, providerStatus?: string) => {
     const nexauraStatus = providerStatus ?? order.nexauraStatus;
     if (order.gameSlug === "free-fire") {
@@ -464,7 +466,7 @@ export function DashboardOrders() {
     if (orderFilter === "all") return true;
     const displayStatus = getDisplayOrderStatus(ord, nexauraStatuses[ord.orderId]?.status);
     if (orderFilter === "completed") {
-      return displayStatus === "completed" || ord.paymentStatus === "paid";
+      return displayStatus === "completed";
     }
     if (orderFilter === "processing") {
       return displayStatus === "processing" || displayStatus === "pending";
@@ -661,23 +663,23 @@ export function DashboardOrders() {
                         {liveStatus === "completed" ? (
                           <span className="order-status-badge modern-pill is-success">
                             <CheckCircle2 size={11} />
-                            Top-Up Completed
+                            Provider reports complete
                           </span>
                         ) : isPolling ? (
                           issueType === "stock_issue" ? (
                             <span className="order-polling-badge modern-pill is-stock-badge">
                               <AlertTriangle size={11} className="text-amber-400 animate-pulse" />
-                              Stock Delay · Queued
+                              Provider submission needs review
                             </span>
                           ) : issueType === "system_issue" ? (
                             <span className="order-polling-badge modern-pill is-system-badge">
                               <AlertTriangle size={11} className="text-amber-400 animate-pulse" />
-                              Server Delay · Queued
+                              Provider status pending
                             </span>
                           ) : (
                             <span className="order-polling-badge modern-pill">
                               <span className="order-polling-spinner" />
-                              Top-Up In Progress
+                              Checking provider status
                             </span>
                           )
                         ) : (
@@ -696,23 +698,20 @@ export function DashboardOrders() {
                           ) : (
                             <Clock size={11} />
                           )}
-                          {statusLabel(ord.paymentStatus)}
+                          {paymentLabel(ord.paymentStatus, ord.paymentMethod)}
                         </span>
                       </div>
                     </div>
                   </div>
 
-                  {/* Stock queue / server delay notice banner */}
+                  {/* Provider issue notice banner */}
                   {isPolling && issueType === "stock_issue" && (
                     <div className="modern-order-alert-strip stock-alert">
                       <AlertTriangle
                         size={14}
                         className="text-amber-400 flex-shrink-0 animate-pulse"
                       />
-                      <span>
-                        Game diamond stock is temporarily queued · Automated delivery completing
-                        shortly
-                      </span>
+                      <span>Provider has not confirmed submission · Order requires review</span>
                       <span className="live-poll-indicator" title="Live checking every 4s" />
                     </div>
                   )}
@@ -723,7 +722,7 @@ export function DashboardOrders() {
                         className="text-amber-400 flex-shrink-0 animate-pulse"
                       />
                       <span>
-                        Game server connection delay · System retrying delivery automatically
+                        Provider submission is unconfirmed · Check order status for updates
                       </span>
                       <span className="live-poll-indicator" title="Live checking every 4s" />
                     </div>
@@ -764,17 +763,17 @@ export function DashboardOrders() {
 
                       {ord.gameSlug === "free-fire" && (
                         <div className="modern-detail-chip modern-detail-chip-full">
-                          <span className="chip-label">Automated Delivery Status</span>
+                          <span className="chip-label">Provider Fulfillment Status</span>
                           <div className="chip-content">
                             <span className="chip-val">
                               {liveStatus === "completed"
-                                ? "Delivered successfully to game account"
+                                ? "Provider reports complete · verify in game"
                                 : issueType === "stock_issue"
-                                  ? "Stock temporarily queued · Delivery in progress"
+                                  ? "Provider submission unconfirmed · review needed"
                                   : issueType === "system_issue"
-                                    ? "Game server connection delay · Delivery in progress"
+                                    ? "Provider submission unconfirmed · check status"
                                     : isPolling
-                                      ? "Dispatched to game server · Delivery in progress"
+                                      ? "Submitted to provider · status pending"
                                       : statusLabel(liveStatus)}
                             </span>
                           </div>
@@ -894,7 +893,7 @@ export function DashboardOrders() {
                   >
                     <span className="tag-dot" />
                     <span className="tag-text">
-                      Delivery:{" "}
+                      Provider status:{" "}
                       {statusLabel(
                         getDisplayOrderStatus(
                           selectedOrder,
@@ -906,7 +905,8 @@ export function DashboardOrders() {
                   <div className={`modern-status-tag ${statusTone(selectedOrder.paymentStatus)}`}>
                     <span className="tag-dot" />
                     <span className="tag-text">
-                      Payment: {statusLabel(selectedOrder.paymentStatus)}
+                      Payment:{" "}
+                      {paymentLabel(selectedOrder.paymentStatus, selectedOrder.paymentMethod)}
                     </span>
                   </div>
                 </div>
@@ -992,7 +992,7 @@ export function DashboardOrders() {
                 </div>
               </div>
 
-              {/* ── Nexaura Automated Top-Up Pipeline (Free Fire only) ── */}
+              {/* ── Free Fire Provider Status ── */}
               {selectedOrder.gameSlug === "free-fire" &&
                 (() => {
                   const liveStatus = (
@@ -1028,25 +1028,26 @@ export function DashboardOrders() {
                         ) : (
                           <RefreshCw size={16} className="text-amber-400 animate-spin" />
                         )}
-                        <h4>Automated Delivery Pipeline</h4>
+                        <h4>Free Fire Provider Status</h4>
                       </div>
 
                       {issueType === "stock_issue" && (
                         <div className="modern-status-alert-box stock-box">
                           <div className="status-alert-header">
                             <AlertTriangle size={16} className="text-amber-400" />
-                            <span className="status-alert-title">Game Stock Allocation Queue</span>
+                            <span className="status-alert-title">
+                              Provider Submission Needs Review
+                            </span>
                           </div>
                           <p className="status-alert-desc">
-                            Your wallet payment is safely verified! High volume on the game server
-                            has placed this top-up in the replenishment queue. Our automated
-                            dispatch will deliver your diamonds shortly — no action is required on
-                            your part.
+                            The provider has not confirmed this top-up submission. The order needs
+                            review; check back for updates or contact support with your order
+                            reference.
                           </p>
                           <div className="status-alert-footer">
                             <span className="live-poll-indicator" />
                             <span className="live-poll-text">
-                              Auto-refreshing status live every 4 seconds
+                              Checking provider status every 4 seconds
                             </span>
                           </div>
                         </div>
@@ -1056,17 +1057,16 @@ export function DashboardOrders() {
                         <div className="modern-status-alert-box system-box">
                           <div className="status-alert-header">
                             <AlertTriangle size={16} className="text-amber-400" />
-                            <span className="status-alert-title">Game Server Connection Delay</span>
+                            <span className="status-alert-title">Provider Update Pending</span>
                           </div>
                           <p className="status-alert-desc">
-                            Your payment is safely confirmed! The game server is currently
-                            experiencing a connection delay. Our system is continuously retrying and
-                            will credit your diamonds shortly.
+                            The provider has not confirmed this submission. Check the order status
+                            for updates or contact support with your order reference.
                           </p>
                           <div className="status-alert-footer">
                             <span className="live-poll-indicator" />
                             <span className="live-poll-text">
-                              Auto-refreshing status live every 4 seconds
+                              Checking provider status every 4 seconds
                             </span>
                           </div>
                         </div>
@@ -1076,10 +1076,10 @@ export function DashboardOrders() {
                         <div className="modern-status-alert-box success-box">
                           <div className="status-alert-header">
                             <CheckCircle2 size={16} className="text-emerald-400" />
-                            <span className="status-alert-title">Delivery Confirmed</span>
+                            <span className="status-alert-title">Provider Reports Complete</span>
                           </div>
                           <p className="status-alert-desc">
-                            Your top-up has been completed and credited directly to Player ID{" "}
+                            The provider reports this top-up as completed for Player ID{" "}
                             <strong className="font-mono text-amber-300">
                               {selectedOrder.playerId}
                             </strong>
@@ -1090,26 +1090,26 @@ export function DashboardOrders() {
 
                       <div className="modern-keyval-grid">
                         <div className="modern-keyval-item">
-                          <span className="keyval-label">Fulfillment Status</span>
+                          <span className="keyval-label">Provider Status</span>
                           <span
                             className={`keyval-status-pill ${statusTone(liveStatus === "completed" ? "completed" : issueType ? "pending" : "processing")}`}
                           >
                             {liveStatus === "completed"
-                              ? "Delivered Successfully"
+                              ? "Provider reports complete"
                               : issueType === "stock_issue"
-                                ? "Stock Queued · Resolving"
+                                ? "Needs review"
                                 : issueType === "system_issue"
-                                  ? "Server Delay · Retrying"
-                                  : "Top-Up In Progress"}
+                                  ? "Submission unconfirmed"
+                                  : "Provider processing"}
                           </span>
                         </div>
                         <div className="modern-keyval-item">
-                          <span className="keyval-label">Live Dispatch Mode</span>
+                          <span className="keyval-label">Provider reference</span>
                           <span className="keyval-value text-muted-foreground">
                             {selectedOrder.nexauraOrderId ||
                             nexauraStatuses[selectedOrder.orderId]?.providerOrderId
-                              ? `Ref: #${selectedOrder.nexauraOrderId || nexauraStatuses[selectedOrder.orderId]?.providerOrderId}`
-                              : "Direct Game Server API Connection"}
+                              ? `#${selectedOrder.nexauraOrderId || nexauraStatuses[selectedOrder.orderId]?.providerOrderId}`
+                              : "Not confirmed"}
                           </span>
                         </div>
                       </div>
@@ -1243,7 +1243,7 @@ export function DashboardOrders() {
               <div className="modern-modal-footer">
                 <p className="modern-modal-disclaimer">
                   Payments made via eZ Cash or Bank Slip are verified manually by the HASA GOLD
-                  STORE staff before automated game top-ups are credited.
+                  STORE staff before eligible game top-ups are submitted to the provider.
                 </p>
               </div>
             </div>

@@ -20,7 +20,6 @@ import { Button } from "@/components/ui/button";
 import { AccountProvider, useAccount } from "@/components/account-context";
 import { WalletProvider } from "@/components/wallet-context";
 import { Toaster } from "@/components/ui/sonner";
-import hasaLogo from "@/assets/newhasalogo.png";
 import { fetchStoreSettings } from "@/lib/firestore";
 import { MaintenanceScreen } from "@/components/maintenance-screen";
 
@@ -89,17 +88,23 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "HASA GOLD STORE" },
-      { name: "description", content: "Explore gaming top-ups at HASA GOLD STORE." },
+      { title: "HASA GOLD STORE | Premium Game Top-Ups in Sri Lanka" },
+      {
+        name: "description",
+        content:
+          "Shop premium game top-ups in Sri Lanka at HASA GOLD STORE. Browse available games and packages in our live catalog.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
+      { name: "theme-color", content: "#171714" },
     ],
     links: [
       {
         rel: "stylesheet",
         href: appCss,
       },
-      { rel: "icon", href: hasaLogo, type: "image/png" },
+      { rel: "icon", href: "/favicon.svg?v=2", type: "image/svg+xml" },
+      { rel: "shortcut icon", href: "/favicon.svg?v=2", type: "image/svg+xml" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {

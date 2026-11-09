@@ -20,7 +20,7 @@ export const Route = createFileRoute("/accounts/")({
   head: () =>
     pageHead(
       "Game Accounts",
-      "Review informational game account listings from the HASA GOLD STORE catalog. Verification, payment, and transfers are unavailable.",
+      "Browse game account listings. Account verification, payment, and credential transfers are not offered; game top-ups are available through the live catalog.",
     ),
   component: AccountsPage,
 });
@@ -127,7 +127,7 @@ function AccountsPage() {
           </p>
           <div className="accounts-trust-row">
             <span>Listing details are not independently verified</span>
-            <span>Purchases and transfers unavailable</span>
+            <span>Account purchases unavailable</span>
           </div>
         </div>
         <div className="accounts-hero-stat-grid">
@@ -202,21 +202,21 @@ function AccountsPage() {
           <span className="accounts-coming-soon-icon" aria-hidden="true">
             <Sparkles size={22} />
           </span>
-          <span className="accounts-coming-soon-tag">Coming soon</span>
-          <h3>Verified game accounts, hand-checked by us</h3>
+          <span className="accounts-coming-soon-tag">Top-ups available now</span>
+          <h3>Game account marketplace</h3>
           <p>
-            We are curating a small set of verified accounts with escrow-protected handover.
-            Listings will appear here as soon as verification is complete.
+            Account listings, purchase verification, and credential transfer are not available. The
+            live game top-up catalog is available for placing top-up orders.
           </p>
           <ul className="accounts-coming-soon-points">
             <li>
-              <ShieldCheck size={14} /> Manually verified before listing
+              <ShieldCheck size={14} /> Account purchase unavailable
             </li>
             <li>
-              <BadgeCheck size={14} /> Escrow-protected handover
+              <BadgeCheck size={14} /> Live game top-up catalog
             </li>
             <li>
-              <Gamepad2 size={14} /> Accounts for every supported game
+              <Gamepad2 size={14} /> Order tracking available
             </li>
           </ul>
           <Button asChild size="lg" className="accounts-coming-soon-cta">
@@ -256,15 +256,15 @@ function AccountsPage() {
           <div className="acc-trust-step">
             <span className="acc-step-num">01</span>
             <h3>Review information</h3>
-            <p>Catalog descriptions are not independently verified by this website.</p>
+            <p>Game top-up packages are listed in the live catalog.</p>
           </div>
           <span className="acc-step-arrow">
             <ArrowRight />
           </span>
           <div className="acc-trust-step">
             <span className="acc-step-num">02</span>
-            <h3>Purchase unavailable</h3>
-            <p>No purchase or support contact workflow is configured.</p>
+            <h3>Top-up orders</h3>
+            <p>Account purchase is unavailable; top-up orders can be placed and tracked.</p>
           </div>
           <span className="acc-step-arrow">
             <ArrowRight />
