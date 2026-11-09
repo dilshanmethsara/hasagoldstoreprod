@@ -27,6 +27,7 @@ import {
   ShieldCheck,
   Trash2,
   LogOut,
+  Menu,
   Users,
   WalletCards,
 } from "lucide-react";
@@ -231,6 +232,7 @@ function AdminShell({
   const { pathname } = useLocation();
   const { ready, uid, user, logout } = useAccount();
   const [signingOut, setSigningOut] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const firebaseUser = getFirebaseAuth().currentUser;
   const sessionActive = Boolean(ready && uid && firebaseUser?.uid === uid);
   const adminEmail = sessionActive
@@ -255,9 +257,31 @@ function AdminShell({
       });
     }
   }
+
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!mobileNavOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileNavOpen(false);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [mobileNavOpen]);
+
   return (
     <div className="admin-app-shell">
-      <aside className="admin-sidebar">
+      {mobileNavOpen && (
+        <button
+          className="admin-mobile-nav-backdrop"
+          type="button"
+          aria-label="Close admin navigation"
+          onClick={() => setMobileNavOpen(false)}
+        />
+      )}
+      <aside id="admin-navigation" className={`admin-sidebar${mobileNavOpen ? " is-open" : ""}`}>
         <Link to="/" className="admin-brand" aria-label="HASA GOLD STORE home">
           <span className="admin-brand-mark">
             <img src={hasaLogo} alt="" />
@@ -316,6 +340,16 @@ function AdminShell({
       </aside>
       <div className="admin-main-column">
         <header className="admin-topbar">
+          <button
+            type="button"
+            className="admin-mobile-menu"
+            aria-label={mobileNavOpen ? "Close navigation menu" : "Open navigation menu"}
+            aria-expanded={mobileNavOpen}
+            aria-controls="admin-navigation"
+            onClick={() => setMobileNavOpen((open) => !open)}
+          >
+            <Menu size={20} />
+          </button>
           <div className="admin-topbar-context">
             <span className="admin-topbar-kicker">HASA GOLD STORE</span>
             <span className="admin-topbar-divider">/</span>
