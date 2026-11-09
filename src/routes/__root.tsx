@@ -23,7 +23,6 @@ import { Toaster } from "@/components/ui/sonner";
 import hasaLogo from "@/assets/newhasalogo.png";
 import { fetchStoreSettings } from "@/lib/firestore";
 import { MaintenanceScreen } from "@/components/maintenance-screen";
-import { useAdminSession } from "@/lib/admin-session";
 
 function NotFoundComponent() {
   return (
@@ -148,8 +147,6 @@ function RootComponent() {
 /** Pass the authenticated Firebase UID to the wallet subscription. */
 function WalletBridge({ admin }: { admin: boolean }) {
   const { uid, user, ready, profileCompletionInProgress } = useAccount();
-  const { data: adminSession } = useAdminSession(uid);
-  const isAdminAccount = Boolean(adminSession?.isAdmin);
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const { data: storeSettings } = useQuery({
@@ -161,14 +158,6 @@ function WalletBridge({ admin }: { admin: boolean }) {
   const isMaintenanceActive = Boolean(storeSettings?.maintenanceMode);
   // Admin routes and login bypass maintenance mode so administrator can manage the store
   const isBypassRoute = admin || pathname === "/admin-login";
-
-  // An administrator account may only use the admin panel: any storefront route
-  // is redirected to /admin instead of being rendered.
-  useEffect(() => {
-    if (!ready || !isAdminAccount) return;
-    if (admin || pathname === "/admin-login" || pathname === "/admin-login/") return;
-    void navigate({ to: "/admin", replace: true });
-  }, [ready, isAdminAccount, admin, pathname, navigate]);
 
   const mustCompleteProfile =
     ready && !profileCompletionInProgress && user?.profileComplete === false;

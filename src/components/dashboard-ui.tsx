@@ -40,6 +40,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/compone
 import { GameGrid, EmptyState } from "./store-ui";
 import { useStore } from "./store-context";
 import { useAccount } from "./account-context";
+import { useAdminSession } from "@/lib/admin-session";
 import { FormField, PasswordField } from "./account-ui";
 import { fetchStoreSettings, useGames, useUserOrders } from "@/lib/firestore";
 import { methodRequiresProof } from "@/lib/payment-methods";
@@ -165,8 +166,12 @@ function Heading({ title, description }: { title: string; description: string })
 }
 
 export function DashboardOverview() {
-  const { user } = useAccount();
+  const { user, uid } = useAccount();
   const { favorites } = useStore();
+  // Resolved server-side from ADMIN_UIDS, so the button only renders for
+  // accounts that actually hold admin rights.
+  const { data: adminSession } = useAdminSession(uid);
+  const isAdminAccount = Boolean(adminSession?.isAdmin);
   const {
     data: catalog = [],
     isLoading: catalogLoading,
@@ -201,6 +206,15 @@ export function DashboardOverview() {
             Support <ArrowUpRight />
           </Link>
         </Button>
+        {isAdminAccount && (
+          <Button asChild variant="outline" className="admin-panel-entry">
+            <a href="/admin">
+              <ShieldCheck />
+              Admin panel
+              <ArrowUpRight />
+            </a>
+          </Button>
+        )}
       </div>
       <section className="dashboard-section">
         <h2>Favorite games</h2>
