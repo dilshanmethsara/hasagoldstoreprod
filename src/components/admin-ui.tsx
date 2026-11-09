@@ -26,6 +26,7 @@ import {
   Settings2,
   ShieldCheck,
   Trash2,
+  LogOut,
   Users,
   WalletCards,
 } from "lucide-react";
@@ -228,7 +229,8 @@ function AdminShell({
   children: ReactNode;
 }) {
   const { pathname } = useLocation();
-  const { ready, uid, user } = useAccount();
+  const { ready, uid, user, logout } = useAccount();
+  const [signingOut, setSigningOut] = useState(false);
   const firebaseUser = getFirebaseAuth().currentUser;
   const sessionActive = Boolean(ready && uid && firebaseUser?.uid === uid);
   const adminEmail = sessionActive
@@ -239,6 +241,20 @@ function AdminShell({
     : sessionActive
       ? "Session active"
       : "Sign-in required";
+
+  async function handleSignOut() {
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      await logout();
+      window.location.assign("/admin-login");
+    } catch (cause) {
+      setSigningOut(false);
+      toast.error("Sign out failed", {
+        description: cause instanceof Error ? cause.message : "Please try again.",
+      });
+    }
+  }
   return (
     <div className="admin-app-shell">
       <aside className="admin-sidebar">
@@ -287,6 +303,15 @@ function AdminShell({
           <Link className="admin-back-link" to="/">
             <ArrowLeft size={15} /> Back to storefront
           </Link>
+          <button
+            type="button"
+            className="admin-signout-btn"
+            onClick={() => void handleSignOut()}
+            disabled={signingOut || !sessionActive}
+          >
+            <LogOut size={15} />
+            {signingOut ? "Signing out…" : "Sign out"}
+          </button>
         </div>
       </aside>
       <div className="admin-main-column">
@@ -306,6 +331,19 @@ function AdminShell({
             <Link className="admin-topbar-storefront" to="/">
               Storefront <ArrowUpRight size={14} />
             </Link>
+            <button
+              type="button"
+              className="admin-topbar-signout"
+              onClick={() => void handleSignOut()}
+              disabled={signingOut || !sessionActive}
+              title="Sign out of the admin panel"
+              aria-label="Sign out of the admin panel"
+            >
+              <LogOut size={15} />
+              <span className="admin-topbar-signout-label">
+                {signingOut ? "Signing out…" : "Sign out"}
+              </span>
+            </button>
           </div>
         </header>
         {!sessionActive && ready && (

@@ -15160,6 +15160,87 @@ html.dark .topup-powered-by-badge {
   color: var(--primary);
 }
 
+/* ── Admin sign-out controls ─────────────────────────────────────────────── */
+.admin-signout-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  margin-top: 8px;
+  padding: 9px 12px;
+  border: 1px solid color-mix(in oklab, oklch(0.62 0.19 25) 26%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in oklab, oklch(0.62 0.19 25) 7%, transparent);
+  color: color-mix(in oklab, oklch(0.52 0.19 25) 85%, var(--foreground));
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease;
+}
+
+.admin-signout-btn:hover:not(:disabled) {
+  background: color-mix(in oklab, oklch(0.62 0.19 25) 14%, transparent);
+  border-color: color-mix(in oklab, oklch(0.62 0.19 25) 46%, var(--border));
+  color: oklch(0.48 0.2 25);
+}
+
+.admin-signout-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.admin-topbar-signout {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 10px;
+  padding: 7px 11px;
+  border: 1px solid color-mix(in oklab, oklch(0.62 0.19 25) 24%, var(--border));
+  border-radius: 9px;
+  background: transparent;
+  color: color-mix(in oklab, oklch(0.52 0.19 25) 80%, var(--muted-foreground));
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease;
+}
+
+.admin-topbar-signout:hover:not(:disabled) {
+  background: color-mix(in oklab, oklch(0.62 0.19 25) 12%, transparent);
+  border-color: color-mix(in oklab, oklch(0.62 0.19 25) 46%, var(--border));
+  color: oklch(0.48 0.2 25);
+}
+
+.admin-topbar-signout:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.admin-topbar-signout-label {
+  display: inline;
+}
+
+html.dark .admin-signout-btn,
+html.dark .admin-topbar-signout {
+  color: oklch(0.78 0.15 25);
+}
+
+html.dark .admin-signout-btn:hover:not(:disabled),
+html.dark .admin-topbar-signout:hover:not(:disabled) {
+  color: oklch(0.86 0.14 25);
+}
+
 .admin-main-column {
   min-width: 0;
 }
@@ -16927,6 +17008,194 @@ html.dark .topup-powered-by-badge {
   .admin-heading-badge {
     padding: 7px 8px;
     font-size: 9px;
+  }
+
+  /* Sign-out stays reachable on phones as an icon-only button. */
+  .admin-topbar-signout {
+    margin-left: 6px;
+    padding: 7px;
+  }
+
+  .admin-topbar-signout-label {
+    display: none;
+  }
+
+  /* Page-level headings and banners stack instead of squeezing. */
+  .admin-page-heading {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .admin-page-heading h1 {
+    font-size: 1.45rem;
+    line-height: 1.25;
+  }
+
+  .admin-welcome-banner {
+    flex-direction: column;
+    align-items: stretch;
+    text-align: left;
+  }
+
+  .admin-metrics,
+  .admin-package-grid,
+  .admin-overview-grid,
+  .admin-form-grid,
+  .admin-detail-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .admin-panel,
+  .admin-card,
+  .admin-table-card {
+    padding: 16px 14px;
+    border-radius: 14px;
+  }
+
+  /* Wide data tables scroll sideways inside their card instead of
+     overflowing the viewport. */
+  .admin-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin-inline: -14px;
+    padding-inline: 14px;
+  }
+
+  .admin-table {
+    min-width: 640px;
+  }
+
+  .admin-actions-row,
+  .admin-toolbar,
+  .admin-filter-row {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .admin-actions-row > *,
+  .admin-toolbar > * {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  /* Sticky action footers keep their buttons usable on small screens. */
+  .admin-form-actions {
+    position: sticky;
+    bottom: 0;
+    flex-direction: column-reverse;
+    gap: 8px;
+    padding: 12px 0 max(12px, env(safe-area-inset-bottom));
+    background: color-mix(in oklab, var(--card) 96%, transparent);
+    backdrop-filter: blur(10px);
+  }
+
+  .admin-form-actions > button,
+  .admin-form-actions > a {
+    width: 100%;
+    justify-content: center;
+    min-height: 44px;
+  }
+
+  /* Every admin input stays tappable and never overflows its column. */
+  .admin-form-input,
+  .admin-form-select,
+  .admin-form-textarea,
+  .admin-field-input {
+    width: 100%;
+    max-width: 100%;
+    min-height: 42px;
+    font-size: 16px; /* stops iOS zoom-on-focus */
+  }
+
+  .admin-form-textarea {
+    min-height: 96px;
+  }
+
+  .admin-form-field {
+    min-width: 0;
+  }
+
+  /* Modal dialogs use the full safe width on phones. */
+  .admin-modal-content,
+  .admin-dialog-content {
+    width: min(100% - 24px, 560px);
+    max-height: calc(100dvh - 48px);
+    overflow-y: auto;
+  }
+
+  .admin-payment-method-card,
+  .admin-warning-scope {
+    padding: 14px;
+  }
+
+  .admin-warning-preview {
+    font-size: 12px;
+  }
+
+  /* Horizontal tab strips scroll rather than wrap. */
+  .admin-tab-list {
+    display: flex;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    gap: 6px;
+    scrollbar-width: thin;
+  }
+
+  .admin-tab-list > * {
+    flex: none;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 420px) {
+  .admin-sidebar {
+    padding: 11px 12px 9px;
+  }
+
+  .admin-side-link {
+    padding: 0 9px;
+    font-size: 9.5px;
+  }
+
+  .admin-topbar {
+    padding: 0 12px;
+    gap: 6px;
+  }
+
+  .admin-topbar-context {
+    font-size: 10px;
+    gap: 6px;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .admin-topbar-kicker {
+    display: none;
+  }
+
+  .admin-content {
+    padding: 20px 12px 16px;
+  }
+
+  .admin-avatar {
+    width: 28px;
+    height: 28px;
+    font-size: 11px;
+  }
+
+  .admin-page-heading h1 {
+    font-size: 1.25rem;
+  }
+
+  .admin-metric-card {
+    padding: 13px;
+  }
+
+  .admin-table {
+    min-width: 560px;
   }
 }
 
