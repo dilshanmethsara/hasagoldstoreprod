@@ -22,6 +22,7 @@ import {
   Sparkles,
   X,
   Wallet,
+  Clock3,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -40,6 +41,7 @@ import { useStore } from "./store-context";
 import { AccountMenu, ThemeMenu } from "./account-menu";
 import { useWallet } from "./wallet-context";
 import { useAccount } from "./account-context";
+import { fetchRecentTopups } from "@/lib/api-client";
 export function Brand() {
   return (
     <Link to="/" className="brand" aria-label="HASA GOLD STORE home">
@@ -305,6 +307,77 @@ export function StoreHeader() {
       </Dialog>
     </>
   );
+}
+
+export function LatestTopups() {
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["publicRecentTopups"],
+    queryFn: fetchRecentTopups,
+    staleTime: 0,
+    refetchInterval: 60_000,
+  });
+  const orders = data?.orders ?? [];
+
+  return (
+    <section className="latest-topups" aria-labelledby="latest-topups-title">
+      <div className="latest-topups-head">
+        <div>
+          <span className="latest-topups-eyebrow">
+            <span /> REAL STORE ACTIVITY
+          </span>
+          <h2 id="latest-topups-title">Latest completed top-ups</h2>
+          <p>Recent orders confirmed as completed. Customer details are kept private.</p>
+        </div>
+        <span className="latest-topups-live">
+          <span /> Live feed
+        </span>
+      </div>
+      {isLoading ? (
+        <div className="latest-topups-empty">Loading recent completed orders…</div>
+      ) : isError ? (
+        <div className="latest-topups-empty">Recent order activity is temporarily unavailable.</div>
+      ) : orders.length === 0 ? (
+        <div className="latest-topups-empty">
+          Completed top-ups will appear here when available.
+        </div>
+      ) : (
+        <div className="latest-topups-grid">
+          {orders.map((order, index) => (
+            <article className="latest-topup-card" key={`${order.updatedAt}-${index}`}>
+              <span className="latest-topup-icon">
+                <Diamond size={18} />
+              </span>
+              <div className="latest-topup-info">
+                <strong>{order.gameName}</strong>
+                <span>{order.packageName}</span>
+              </div>
+              <div className="latest-topup-meta">
+                <span className="latest-topup-status">
+                  <Check size={12} /> Completed
+                </span>
+                <span className="latest-topup-time">
+                  <Clock3 size={11} /> {timeAgo(order.updatedAt)}
+                </span>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+      <p className="latest-topups-note">
+        Only completed orders are shown. No Player IDs, names, or payment details are published.
+      </p>
+    </section>
+  );
+}
+
+function timeAgo(timestamp: number): string {
+  const elapsed = Math.max(0, Date.now() - timestamp);
+  const minutes = Math.floor(elapsed / 60_000);
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
 }
 
 export function BottomNavigation() {

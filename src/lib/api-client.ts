@@ -165,6 +165,18 @@ export interface ApiOrdersResponse {
   orders: ApiOrder[];
 }
 
+export interface PublicRecentTopup {
+  gameName: string;
+  packageName: string;
+  status: "completed" | "delivered";
+  providerStatus: string | null;
+  updatedAt: number;
+}
+
+export function fetchRecentTopups(): Promise<{ orders: PublicRecentTopup[] }> {
+  return apiRequest<{ orders: PublicRecentTopup[] }>("/v1/recent-topups");
+}
+
 export interface ApiCreateOrderResponse {
   order: ApiOrder;
   duplicate: boolean;

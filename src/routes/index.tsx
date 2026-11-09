@@ -14,7 +14,7 @@ import {
   Trophy,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { CatalogGrid, Steps, SupportBand, FAQ } from "@/components/store-ui";
+import { CatalogGrid, Steps, SupportBand, FAQ, LatestTopups } from "@/components/store-ui";
 import { pageHead } from "@/lib/store-data";
 import { resolveArtwork, useGameAccounts, useGames } from "@/lib/firestore";
 import hero from "@/assets/diamond-world.jpg";
@@ -280,6 +280,8 @@ function Index() {
           paid Free Fire orders are submitted to Nexaura; other games are fulfilled by our team.
         </p>
       </section>
+
+      <LatestTopups />
 
       {/* === FEATURED ACCOUNTS SECTION === */}
       <section className="home-section home-accounts-section">
