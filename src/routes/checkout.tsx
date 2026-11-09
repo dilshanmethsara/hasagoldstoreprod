@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -413,6 +413,14 @@ function CheckoutPage() {
     nexauraIssueType?: "stock_issue" | "system_issue" | null | undefined;
     nexauraPollError?: string | undefined;
   } | null>(null);
+  const [showOrderCelebration, setShowOrderCelebration] = useState(false);
+  const celebratedOrderIds = useRef(new Set<string>());
+
+  useEffect(() => {
+    if (!showOrderCelebration) return;
+    const timeoutId = window.setTimeout(() => setShowOrderCelebration(false), 2600);
+    return () => window.clearTimeout(timeoutId);
+  }, [showOrderCelebration]);
   const isNexauraCheckout = paymentMethod === "wallet" && searchParams.game === "free-fire";
   const isAwaitingNexaura =
     isNexauraCheckout &&
@@ -634,6 +642,10 @@ function CheckoutPage() {
         nexauraMessage: result.topup?.message,
         nexauraIssueType: initialIssueType,
       });
+      if (!celebratedOrderIds.current.has(orderData.id)) {
+        celebratedOrderIds.current.add(orderData.id);
+        setShowOrderCelebration(true);
+      }
 
       // Send order confirmation email
       try {
@@ -1287,10 +1299,38 @@ function CheckoutPage() {
       )}
 
       {/* ── Receipt dialog ── */}
+      {showOrderCelebration && completedOrder && !isAwaitingNexaura && (
+        <div className="order-celebration" aria-hidden="true">
+          <div className="order-celebration-glow" />
+          <div className="order-celebration-coins">
+            {Array.from({ length: 24 }, (_, index) => (
+              <span
+                className="order-flying-coin"
+                key={`${completedOrder.orderId}-${index}`}
+                style={
+                  {
+                    "--coin-left": `${(index * 41 + 7) % 100}%`,
+                    "--coin-size": `${22 + ((index * 13) % 24)}px`,
+                    "--coin-drift": `${((index * 37) % 160) - 80}px`,
+                    "--coin-duration": `${3.3 + ((index * 19) % 30) / 10}s`,
+                    "--coin-delay": `${-((index * 23) % 45) / 10}s`,
+                    "--coin-spin": `${index % 2 ? 540 : -540}deg`,
+                  } as React.CSSProperties
+                }
+              >
+                <span>H</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
       <Dialog
         open={Boolean(completedOrder) || (isNexauraCheckout && processingOrder)}
         onOpenChange={(open) => {
-          if (!open && !proofUploading && !isAwaitingNexaura) setCompletedOrder(null);
+          if (!open && !proofUploading && !isAwaitingNexaura) {
+            setCompletedOrder(null);
+            setShowOrderCelebration(false);
+          }
         }}
       >
         <DialogContent
@@ -1317,11 +1357,12 @@ function CheckoutPage() {
               onCopyOrderId={() => void handleCopyOrderId()}
               onViewDashboard={() => {
                 setCompletedOrder(null);
+                setShowOrderCelebration(false);
                 navigate({ to: "/dashboard/orders" });
               }}
             />
           ) : completedOrder ? (
-            <div className="receipt-sheet">
+            <div className={`receipt-sheet${showOrderCelebration ? " is-celebrating" : ""}`}>
               <div className="receipt-sheet-top">
                 <div className={`receipt-check is-${receiptTone}`} aria-hidden="true">
                   {receiptTone === "error" ? (
@@ -1473,6 +1514,7 @@ function CheckoutPage() {
                   disabled={proofUploading}
                   onClick={() => {
                     setCompletedOrder(null);
+                    setShowOrderCelebration(false);
                     navigate({ to: "/dashboard/orders" });
                   }}
                 >

@@ -1654,6 +1654,131 @@
   margin-top: auto;
 }
 
+@media (max-width: 620px) {
+  .game-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 11px;
+  }
+}
+
+/* Polished home catalog section; retain the original game-card dimensions. */
+.home-catalog-section {
+  padding-top: clamp(30px, 4vw, 46px);
+}
+.home-catalog-section .section-heading {
+  position: relative;
+  margin-bottom: 22px;
+  padding: 18px 20px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--border));
+  border-radius: 16px;
+  background: linear-gradient(
+    110deg,
+    color-mix(in srgb, var(--primary) 9%, var(--card)),
+    var(--card) 65%
+  );
+}
+.home-catalog-section .section-heading::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3px;
+  background: var(--primary);
+  content: "";
+}
+.home-catalog-section .section-heading h2 {
+  margin-bottom: 5px;
+  font-size: clamp(22px, 2.5vw, 27px);
+  font-weight: 800;
+  letter-spacing: -0.035em;
+}
+.home-catalog-section .section-heading p {
+  font-size: 12px;
+}
+.home-catalog-section .section-heading > a {
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--background) 65%, transparent);
+  font-weight: 700;
+}
+.home-catalog-section .game-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px;
+}
+.home-catalog-section .game-card {
+  border-radius: 14px;
+  box-shadow: 0 7px 22px rgb(0 0 0 / 7%);
+}
+.home-catalog-section .game-card:hover {
+  transform: translateY(-4px);
+  border-color: color-mix(in srgb, var(--primary) 40%, var(--border));
+  box-shadow: 0 16px 32px rgb(0 0 0 / 12%);
+}
+.home-catalog-section .game-card-body {
+  padding: 15px;
+}
+.home-catalog-section .game-name-row h3 {
+  font-size: 14px;
+  font-weight: 800;
+}
+.home-catalog-section .game-card-body p {
+  margin: 6px 0 14px;
+  font-size: 11px;
+}
+.home-catalog-section .game-card-body .w-full {
+  height: 38px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--primary) 8%, var(--muted));
+  font-weight: 700;
+}
+@media (max-width: 900px) {
+  .home-catalog-section .game-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+  }
+}
+@media (max-width: 520px) {
+  .home-catalog-section .section-heading {
+    gap: 8px;
+    padding: 15px 14px;
+  }
+  .home-catalog-section .section-heading h2 {
+    font-size: 21px;
+  }
+  .home-catalog-section .section-heading p {
+    max-width: 220px;
+    font-size: 11px;
+    line-height: 1.5;
+  }
+  .home-catalog-section .section-heading > a {
+    padding: 7px 8px;
+    font-size: 10px;
+  }
+  .home-catalog-section .game-grid {
+    gap: 10px;
+  }
+  .home-catalog-section .game-card {
+    border-radius: 12px;
+  }
+  .home-catalog-section .game-card-body {
+    padding: 11px;
+  }
+  .home-catalog-section .game-name-row h3 {
+    font-size: 12px;
+  }
+  .home-catalog-section .game-card-body p {
+    margin: 5px 0 10px;
+    font-size: 10px;
+  }
+  .home-catalog-section .game-card-body .w-full {
+    height: 34px;
+    padding-inline: 9px;
+    font-size: 10px;
+  }
+}
+
 .catalog-note {
   display: flex;
   align-items: center;
@@ -13470,16 +13595,154 @@ html.dark .topup-powered-by-badge {
 }
 
 .checkout-receipt-dialog {
+  position: relative;
   max-width: 440px;
   padding: 22px 20px 20px;
   overflow: hidden;
+  border-color: color-mix(in srgb, #d8a63b 24%, var(--border));
   background:
-    radial-gradient(
-      120% 70% at 50% -10%,
-      color-mix(in oklab, var(--primary) 14%, transparent),
-      transparent 58%
-    ),
-    var(--card);
+    radial-gradient(110% 70% at 50% -12%, rgb(213 164 62 / 15%), transparent 62%),
+    color-mix(in srgb, #0b1020 8%, var(--card));
+  box-shadow:
+    0 28px 90px rgb(3 7 18 / 38%),
+    inset 0 1px 0 rgb(255 255 255 / 5%);
+}
+
+.order-celebration {
+  position: fixed;
+  z-index: 50;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  perspective: 900px;
+}
+.order-celebration-glow {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at 50% 48%, rgb(215 165 62 / 13%), transparent 60%);
+  animation: order-glow-fade 2.6s ease-out both;
+}
+.order-hero-coin,
+.order-flying-coin {
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #765017;
+  background:
+    radial-gradient(ellipse at 31% 23%, rgb(255 255 255 / 96%), transparent 19%),
+    radial-gradient(ellipse at 68% 78%, rgb(131 76 13 / 54%), transparent 35%),
+    linear-gradient(
+      135deg,
+      #fff0a7 0%,
+      #e6b94e 22%,
+      #fff1a6 40%,
+      #c78b2b 63%,
+      #ffe28a 79%,
+      #ae741c 100%
+    );
+  box-shadow:
+    inset 0 0 0 2px rgb(255 244 189 / 80%),
+    inset 0 0 0 5px rgb(155 102 23 / 40%),
+    0 5px 16px rgb(0 0 0 / 30%);
+  backface-visibility: hidden;
+}
+.order-flying-coin::before,
+.order-flying-coin::before {
+  position: absolute;
+  inset: 8px;
+  border: 1px solid rgb(117 75 13 / 44%);
+  border-radius: inherit;
+  content: "";
+}
+.order-flying-coin span {
+  display: grid;
+  width: 54%;
+  height: 54%;
+  place-items: center;
+  border: 1px solid rgb(121 79 17 / 58%);
+  border-radius: 50%;
+  color: #825719;
+  font-family: Georgia, serif;
+  font-size: 15px;
+  font-weight: 800;
+  text-shadow: 0 1px rgb(255 255 255 / 85%);
+  box-shadow:
+    inset 0 1px 3px rgb(255 255 255 / 80%),
+    0 1px 2px rgb(116 73 13 / 26%);
+}
+.order-celebration-coins {
+  position: absolute;
+  inset: 0;
+  perspective: 600px;
+}
+.order-flying-coin {
+  position: absolute;
+  top: 110%;
+  left: var(--coin-left);
+  width: var(--coin-size);
+  height: var(--coin-size);
+  animation: order-coin-float var(--coin-duration) linear var(--coin-delay) both;
+}
+.order-flying-coin::before {
+  inset: 4px;
+}
+.receipt-sheet.is-celebrating .receipt-sheet-top,
+.receipt-sheet.is-celebrating .receipt-ticket,
+.receipt-sheet.is-celebrating > :not(.order-celebration) {
+  animation: receipt-success-in 460ms cubic-bezier(0.2, 0.75, 0.25, 1) 1.55s both;
+}
+.receipt-sheet.is-celebrating .receipt-check {
+  animation-delay: 1.62s;
+}
+@keyframes order-glow-fade {
+  0%,
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes order-coin-float {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 0, 0) rotateY(0) rotateZ(0);
+  }
+  10% {
+    opacity: 0.9;
+  }
+  50% {
+    transform: translate3d(calc(var(--coin-drift) * -1), -60vh, 0) rotateY(240deg) rotateZ(150deg);
+  }
+  90% {
+    opacity: 0.75;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(var(--coin-drift), -125vh, 0) rotateY(var(--coin-spin)) rotateZ(340deg);
+  }
+}
+@keyframes receipt-success-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .order-celebration,
+  .order-celebration-glow,
+  .order-flying-coin,
+  .receipt-sheet.is-celebrating .receipt-sheet-top,
+  .receipt-sheet.is-celebrating .receipt-ticket,
+  .receipt-sheet.is-celebrating > :not(.order-celebration) {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+  }
 }
 
 .receipt-sheet {

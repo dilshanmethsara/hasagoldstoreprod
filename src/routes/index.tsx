@@ -262,7 +262,7 @@ function Index() {
           </div>
         </div>
       </div>
-      <section className="home-section">
+      <section className="home-section home-catalog-section">
         <div className="section-heading">
           <div>
             <h2>Choose your game</h2>
