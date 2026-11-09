@@ -2995,6 +2995,7 @@ export function AdminPaymentMethods() {
   );
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingLogoKey, setUploadingLogoKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -3034,6 +3035,46 @@ export function AdminPaymentMethods() {
     setMethods((current) =>
       current.map((method) => (method.editKey === editKey ? { ...method, ...changes } : method)),
     );
+  }
+
+  async function uploadPaymentLogo(editKey: string, file?: File) {
+    if (!file) return;
+    const allowed = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+    if (!allowed.includes(file.type)) {
+      setError("Choose a PNG, JPG, WEBP, or GIF icon.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setError("Payment icon must be smaller than 5MB.");
+      return;
+    }
+    setError(null);
+    setUploadingLogoKey(editKey);
+    try {
+      const dataBase64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = String(reader.result ?? "");
+          resolve(result.slice(result.indexOf(",") + 1));
+        };
+        reader.onerror = () => reject(new Error("Could not read the image file."));
+        reader.readAsDataURL(file);
+      });
+      const { url } = await uploadAdminImageApi({
+        folder: "payments",
+        fileName: file.name,
+        contentType: file.type,
+        dataBase64,
+      });
+      updateMethod(editKey, { logoUrl: url });
+      toast.success("Payment icon uploaded. Save payment methods to publish it.");
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : "Payment icon upload failed.";
+      setError(message);
+      toast.error(message);
+    } finally {
+      setUploadingLogoKey(null);
+    }
   }
 
   function addMethod() {
@@ -3107,9 +3148,7 @@ export function AdminPaymentMethods() {
         warningTitle:
           id === "wallet" || !method.warningEnabled ? null : method.warningTitle?.trim() || null,
         warningMessage:
-          id === "wallet" || !method.warningEnabled
-            ? null
-            : method.warningMessage?.trim() || null,
+          id === "wallet" || !method.warningEnabled ? null : method.warningMessage?.trim() || null,
       };
     });
 
@@ -3333,18 +3372,47 @@ export function AdminPaymentMethods() {
                           }
                         />
                       </FormField>
-                      <FormField label="Logo URL" hint="Optional. Blank shows the short label.">
-                        <input
-                          className="admin-form-input"
-                          value={method.logoUrl ?? ""}
-                          maxLength={1000}
-                          onChange={(event) =>
-                            updateMethod(method.editKey, { logoUrl: event.target.value })
-                          }
-                        />
-                      </FormField>
                     </>
                   )}
+                  <FormField
+                    label="Payment icon"
+                    hint="Optional · PNG, JPG, WEBP, or GIF · max 5MB. Uploads are hosted securely on the store CDN."
+                  >
+                    <div className="admin-image-upload-box">
+                      {method.logoUrl && (
+                        <div className="admin-image-preview">
+                          <img
+                            src={method.logoUrl}
+                            alt={`${method.name} icon preview`}
+                            className="admin-preview-thumb"
+                          />
+                          <button
+                            type="button"
+                            className="admin-remove-image-btn"
+                            onClick={() => updateMethod(method.editKey, { logoUrl: null })}
+                          >
+                            Remove icon
+                          </button>
+                        </div>
+                      )}
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/gif"
+                        className="admin-file-input"
+                        disabled={uploadingLogoKey !== null}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          void uploadPaymentLogo(method.editKey, file);
+                          event.currentTarget.value = "";
+                        }}
+                      />
+                      {uploadingLogoKey === method.editKey && (
+                        <span className="admin-uploading-indicator">
+                          <RefreshCw size={14} className="animate-spin" /> Uploading icon…
+                        </span>
+                      )}
+                    </div>
+                  </FormField>
                   {!isWallet && (
                     <fieldset className="admin-warning-scope">
                       <legend>Checkout warning banner</legend>
