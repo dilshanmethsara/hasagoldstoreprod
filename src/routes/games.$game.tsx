@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { ArrowRight, ChevronRight } from "lucide-react";
+import { ArrowRight, BadgePercent, ChevronRight, Crown, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { pageHead } from "@/lib/store-data";
 import { FavoriteButton, SupportBand } from "@/components/store-ui";
@@ -115,6 +115,39 @@ function GamePage() {
           </div>
         </div>
       </section>
+
+      {game.id === "free-fire" && (
+        <section
+          className="free-fire-savings"
+          aria-label="Free Fire membership and Level Up Pass discounts"
+        >
+          <span className="free-fire-savings-glow" aria-hidden="true" />
+          <span className="free-fire-savings-badge" aria-hidden="true">
+            <BadgePercent size={25} />
+          </span>
+          <div className="free-fire-savings-copy">
+            <span className="free-fire-savings-kicker">
+              <Sparkles size={13} /> FREE FIRE SPECIAL
+            </span>
+            <h2>Big discounts are on!</h2>
+            <p>
+              Save more on Memberships and Level Up Passes. Pick your package below and check
+              today’s prices.
+            </p>
+            <div className="free-fire-savings-tags">
+              <span>
+                <Crown size={13} /> Memberships
+              </span>
+              <span>
+                <Sparkles size={13} /> Level Up Passes
+              </span>
+            </div>
+          </div>
+          <span className="free-fire-savings-emoji" aria-hidden="true">
+            🔥
+          </span>
+        </section>
+      )}
 
       <GameTopUpOrder
         game={game}

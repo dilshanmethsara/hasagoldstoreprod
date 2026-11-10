@@ -65,6 +65,7 @@ export function StoreHeader() {
   const { balance, formatAmount, isLoaded, error: walletError } = useWallet();
   const { uid, ready } = useAccount();
   const { data, isLoading } = useGames();
+  const freeFireGame = (data ?? []).find((game) => game.active && /free\s*fire/i.test(game.name));
   const { data: storeSettings } = useQuery({
     queryKey: ["storeSettings"],
     queryFn: fetchStoreSettings,
@@ -81,13 +82,59 @@ export function StoreHeader() {
   }
   return (
     <>
-      <div className="preview-strip">
-        {storeSettings?.maintenanceMode
-          ? "Store maintenance is in progress; new orders are temporarily disabled."
-          : storeSettings?.bannerEnabled && storeSettings.tagline
-            ? storeSettings.tagline
-            : "Live store · Browse available games and place your order today."}
-      </div>
+      {storeSettings?.maintenanceMode ? (
+        <div className="preview-strip preview-strip--maintenance">
+          <span className="preview-strip-icon" aria-hidden="true">
+            🛠️
+          </span>
+          <span>Store maintenance is in progress; new orders are temporarily disabled.</span>
+        </div>
+      ) : storeSettings?.bannerEnabled && storeSettings.tagline ? (
+        <div className="preview-strip preview-strip--announcement">
+          <span className="preview-strip-icon" aria-hidden="true">
+            ✨
+          </span>
+          <span className="preview-strip-copy">
+            {freeFireGame && <strong>Today’s Free Fire deals</strong>}
+            <span>{storeSettings.tagline}</span>
+          </span>
+          {freeFireGame && (
+            <Link
+              to="/games/$game"
+              params={{ game: freeFireGame.id }}
+              className="preview-strip-cta"
+            >
+              Free Fire deals <ArrowRight size={13} />
+            </Link>
+          )}
+          <span className="preview-strip-fire" aria-hidden="true">
+            🔥
+          </span>
+        </div>
+      ) : (
+        <div className="preview-strip preview-strip--announcement">
+          <span className="preview-strip-icon" aria-hidden="true">
+            🔥
+          </span>
+          <span>
+            {freeFireGame
+              ? "Today’s Free Fire deals are here — explore diamond top-ups!"
+              : "Live store · Browse available games and place your order today."}
+          </span>
+          {freeFireGame && (
+            <Link
+              to="/games/$game"
+              params={{ game: freeFireGame.id }}
+              className="preview-strip-cta"
+            >
+              Explore <ArrowRight size={13} />
+            </Link>
+          )}
+          <span className="preview-strip-fire" aria-hidden="true">
+            💎
+          </span>
+        </div>
+      )}
       <header className="store-header">
         <div className="container header-inner">
           <Brand />
@@ -264,11 +311,18 @@ export function StoreHeader() {
           )}
       </header>
       <Dialog open={quick} onOpenChange={setQuick}>
-        <DialogContent>
-          <DialogTitle>Find your next top-up</DialogTitle>
-          <DialogDescription>Search games or in-game currency.</DialogDescription>
-          <form className="search-field" onSubmit={search}>
-            <Search size={20} />
+        <DialogContent className="quick-search-dialog">
+          <div className="quick-search-heading">
+            <span className="quick-search-heading-icon">
+              <Gamepad2 size={20} />
+            </span>
+            <div>
+              <DialogTitle>Find your next top-up</DialogTitle>
+              <DialogDescription>Search games or in-game currency.</DialogDescription>
+            </div>
+          </div>
+          <form className="search-field quick-search-field" onSubmit={search}>
+            <Search size={19} />
             <input
               aria-label="Quick search games"
               placeholder="Search games, diamonds, UC…"
@@ -276,12 +330,23 @@ export function StoreHeader() {
               onChange={(event) => setQuery(event.target.value)}
               autoFocus
             />
-            <Button type="submit" size="icon" aria-label="View search results">
-              <ArrowRight />
+            <Button
+              type="submit"
+              size="icon"
+              aria-label="View search results"
+              className="quick-search-submit"
+            >
+              <ArrowRight size={18} />
             </Button>
           </form>
+          <div className="quick-search-results-heading">
+            <span>{query.trim() ? "MATCHING GAMES" : "AVAILABLE GAMES"}</span>
+            <small>
+              {results.length} {results.length === 1 ? "result" : "results"}
+            </small>
+          </div>
           <div className="quick-results">
-            {results.map((game) => (
+            {results.slice(0, 6).map((game) => (
               <Link
                 key={game.id}
                 to="/games/$game"
@@ -291,16 +356,26 @@ export function StoreHeader() {
                   setQuery("");
                 }}
               >
-                <img src={game.image} alt="" width={48} height={48} />
+                <span className="quick-result-art">
+                  <img src={game.image} alt="" width={48} height={48} />
+                </span>
                 <span>
                   <strong>{game.name}</strong>
-                  <small>{game.currency}</small>
+                  <small>
+                    <Diamond size={12} /> {game.currency}
+                  </small>
                 </span>
-                <ArrowUpRight size={18} />
+                <span className="quick-result-arrow">
+                  <ArrowUpRight size={16} />
+                </span>
               </Link>
             ))}
             {results.length === 0 && (
-              <p className="text-muted-foreground">No games found. Try another name or currency.</p>
+              <div className="quick-search-empty">
+                <Search size={20} />
+                <strong>No matching games</strong>
+                <span>Try a different game name or currency.</span>
+              </div>
             )}
           </div>
         </DialogContent>

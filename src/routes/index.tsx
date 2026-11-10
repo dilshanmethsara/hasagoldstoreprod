@@ -48,6 +48,7 @@ function Index() {
   // advertise a game that is not actually available.
   const { data: games = [] } = useGames();
   const activeGames = games.filter((game) => game.active);
+  const freeFireGame = activeGames.find((game) => /free\s*fire/i.test(game.name));
   const { data: catalog } = useQuery({
     queryKey: ["publicCatalogStats"],
     queryFn: fetchApiCatalog,
@@ -83,6 +84,38 @@ function Index() {
         {/* Animated particle glow */}
         <span className="hero-glow-orb hero-glow-orb--gold" aria-hidden="true" />
         <span className="hero-glow-orb hero-glow-orb--blue" aria-hidden="true" />
+        <div className="hero-crystal-scene" aria-hidden="true">
+          <span className="hero-crystal-orbit hero-crystal-orbit--one" />
+          <span className="hero-crystal-orbit hero-crystal-orbit--two" />
+          {["large", "small", "tiny"].map((size) => (
+            <svg key={size} className={`hero-crystal hero-crystal--${size}`} viewBox="0 0 100 120">
+              <defs>
+                <linearGradient id={`hero-crystal-fill-${size}`} x1="0" y1="0" x2="1" y2="1">
+                  <stop stopColor="#f3fbff" />
+                  <stop offset=".34" stopColor="#81d8ff" />
+                  <stop offset=".72" stopColor="#388bf1" />
+                  <stop offset="1" stopColor="#1743a6" />
+                </linearGradient>
+              </defs>
+              <path d="M25 5h50l23 30-48 80L2 35 25 5Z" fill={`url(#hero-crystal-fill-${size})`} />
+              <path
+                d="m25 5 9 30h32l9-30M2 35h96M34 35l16 80 16-80M25 5l9 30 16-30 16 30 9-30"
+                fill="none"
+                stroke="rgb(255 255 255 / 75%)"
+                strokeWidth="2"
+              />
+              <path d="M25 5 2 35l32 0L25 5Z" fill="rgb(255 255 255 / 28%)" />
+            </svg>
+          ))}
+          <span className="hero-crystal-spark hero-crystal-spark--one">✦</span>
+          <span className="hero-crystal-spark hero-crystal-spark--two">✧</span>
+          <span className="hero-crystal-spark hero-crystal-spark--three">✦</span>
+          {["one", "two", "three"].map((coin) => (
+            <span key={coin} className={`hero-gold-coin hero-gold-coin--${coin}`}>
+              <span>H</span>
+            </span>
+          ))}
+        </div>
 
         {/* Live pill – top-right */}
         <span className="hero-live-tag">
@@ -235,6 +268,65 @@ function Index() {
           </div>
         </div>
       </section>
+      {freeFireGame && (
+        <Link
+          to="/games/$game"
+          params={{ game: freeFireGame.id }}
+          className="free-fire-promo"
+          aria-label="Explore today's Free Fire discounts"
+        >
+          <span className="free-fire-diamonds" aria-hidden="true">
+            {[0, 1, 2, 3, 4, 5].map((diamond) => (
+              <svg
+                key={diamond}
+                className={`free-fire-diamond free-fire-diamond-${diamond + 1}`}
+                viewBox="0 0 40 48"
+                focusable="false"
+              >
+                <path
+                  d="M9 3h22l8 12-19 30L1 15 9 3Z"
+                  fill={`url(#free-fire-diamond-fill-${diamond})`}
+                />
+                <path
+                  d="m9 3 3 12h16l3-12M1 15h38M12 15l8 30 8-30M9 3l3 12 8-12 8 12 3-12"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                />
+                <defs>
+                  <linearGradient
+                    id={`free-fire-diamond-fill-${diamond}`}
+                    x1="0"
+                    y1="0"
+                    x2="1"
+                    y2="1"
+                  >
+                    <stop stopColor="#e0f5ff" />
+                    <stop offset=".48" stopColor="#69c5ff" />
+                    <stop offset="1" stopColor="#2875e8" />
+                  </linearGradient>
+                </defs>
+              </svg>
+            ))}
+          </span>
+          <span className="free-fire-promo-emoji" aria-hidden="true">
+            🔥
+          </span>
+          <span className="free-fire-promo-copy">
+            <span className="free-fire-promo-kicker">
+              TODAY’S FREE FIRE DEALS <span aria-hidden="true">✨</span>
+            </span>
+            <strong>More diamonds, more savings!</strong>
+            <small>Check out today’s Free Fire discounts while they’re available.</small>
+          </span>
+          <span className="free-fire-promo-action">
+            Explore deals <ArrowRight size={16} />
+          </span>
+          <span className="free-fire-promo-sparkle" aria-hidden="true">
+            💎
+          </span>
+        </Link>
+      )}
       <div className="feature-row">
         <div className="feature-item">
           <div className="feature-item-icon">
