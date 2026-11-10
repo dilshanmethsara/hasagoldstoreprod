@@ -495,12 +495,14 @@ function AdminDataPage({
   collection,
   template,
   readOnly = false,
+  packagesOnly = false,
 }: {
   title: string;
   description: string;
   collection: AdminSection;
   template?: AdminRecord;
   readOnly?: boolean;
+  packagesOnly?: boolean;
 }) {
   const { ready, uid } = useAccount();
   const queryClient = useQueryClient();
@@ -515,6 +517,7 @@ function AdminDataPage({
   const [packageGameLocked, setPackageGameLocked] = useState(false);
   const [packageQuery, setPackageQuery] = useState("");
   const [packageStatus, setPackageStatus] = useState<"all" | "active" | "archived">("all");
+  const [selectedPackageGame, setSelectedPackageGame] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [imageUploading, setImageUploading] = useState(false);
   const { data: catalogGames = [] } = useGames();
@@ -543,6 +546,10 @@ function AdminDataPage({
     [collection, ready, uid],
   );
 
+  useEffect(() => {
+    if (!packagesOnly || selectedPackageGame) void load();
+  }, [load, packagesOnly, selectedPackageGame]);
+
   function edit(record: AdminRecord | null, defaults?: AdminRecord) {
     setSelected(record);
     setFormError(null);
@@ -553,8 +560,14 @@ function AdminDataPage({
     if (collection === "products") {
       if (!formText(nextForm, "category")) nextForm["category"] = "diamonds";
       if (!record) {
-        if (!formText(nextForm, "gameSlug") && catalogGames[0]) {
-          nextForm["gameSlug"] = catalogGames[0].id;
+        const targetGameSlug =
+          formText(nextForm, "gameSlug") ||
+          (typeof defaults?.["gameSlug"] === "string" ? defaults["gameSlug"] : "") ||
+          selectedPackageGame ||
+          catalogGames[0]?.id ||
+          "";
+        if (targetGameSlug) {
+          nextForm["gameSlug"] = targetGameSlug;
         }
         // Package IDs are internal link keys; generate one so admins never edit it by hand.
         nextForm["id"] =
@@ -562,7 +575,14 @@ function AdminDataPage({
       }
     }
     setForm(nextForm);
-    setPackageGameLocked(collection === "products" && !record && Boolean(defaults?.["gameSlug"]));
+    setPackageGameLocked(
+      collection === "products" &&
+        !record &&
+        Boolean(defaults?.["gameSlug"] || selectedPackageGame),
+    );
+    if (collection === "products" && !record && defaults?.["gameSlug"]) {
+      setSelectedPackageGame(String(defaults["gameSlug"]));
+    }
     setEditorOpen(true);
   }
 
@@ -837,6 +857,7 @@ function AdminDataPage({
   const visibleRecords =
     collection === "products"
       ? records.filter((record) => {
+          if (selectedPackageGame && record["gameSlug"] !== selectedPackageGame) return false;
           const archived = record["active"] === false;
           if (packageStatus === "active" && archived) return false;
           if (packageStatus === "archived" && !archived) return false;
@@ -1022,131 +1043,184 @@ function AdminDataPage({
     <AdminShell title={title} description={description}>
       <div className={`admin-content-grid${editorOpen ? " has-editor" : ""}`}>
         <section className="admin-panel admin-records-panel">
-          <div className="admin-panel-header">
-            <div>
-              <span className="admin-panel-eyebrow">
-                {collection === "products" ? "PACKAGE CATALOG" : "LIVE COLLECTION"}
-              </span>
-              <h2>
-                {collection === "products" ? "Packages" : "Firestore records"}{" "}
-                <span className="admin-count-pill">
-                  {collection === "products" && visibleRecords.length !== records.length
-                    ? `${visibleRecords.length}/${records.length}`
-                    : records.length}
-                </span>
-              </h2>
-            </div>
-            <div className="admin-panel-actions">
-              <Button
-                className="admin-quiet-button"
-                variant="outline"
-                size="sm"
-                onClick={() => void load()}
-                disabled={loading}
-              >
-                <RefreshCw size={14} /> Refresh
-              </Button>
-              {!readOnly && (
-                <Button className="admin-primary-button" size="sm" onClick={() => edit(null)}>
-                  <Plus size={15} /> {collection === "products" ? "New package" : "New record"}
-                </Button>
-              )}
-            </div>
-          </div>
           {collection === "products" && (
-            <div className="admin-package-toolbar">
-              <label className="admin-package-search">
-                <Search size={14} aria-hidden="true" />
-                <input
-                  type="search"
-                  value={packageQuery}
-                  onChange={(event) => setPackageQuery(event.target.value)}
-                  placeholder="Search packages by name, ID, or game"
-                  aria-label="Search packages"
-                />
-              </label>
-              <div className="admin-package-filter" role="group" aria-label="Filter packages">
-                {(
-                  [
-                    ["all", "All"],
-                    ["active", "Live"],
-                    ["archived", "Archived"],
-                  ] as const
-                ).map(([value, label]) => (
-                  <button
-                    key={value}
+            <div className="admin-orders-games admin-package-games">
+              <div className="admin-panel-header">
+                <div>
+                  <span className="admin-panel-eyebrow">LIVE STORE CATALOG</span>
+                  <h2>
+                    {selectedPackageGame ? "Selected game" : "Choose a game to manage packages"}
+                  </h2>
+                </div>
+                {selectedPackageGame && (
+                  <Button
                     type="button"
-                    className={packageStatus === value ? "is-active" : undefined}
-                    aria-pressed={packageStatus === value}
-                    onClick={() => setPackageStatus(value)}
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setSelectedPackageGame(null);
+                      setPackageQuery("");
+                    }}
                   >
-                    {label}
-                  </button>
-                ))}
+                    Change game
+                  </Button>
+                )}
+              </div>
+              <div className="admin-orders-game-grid">
+                {catalogGames
+                  .filter((game) => game.active)
+                  .map((game) => (
+                    <button
+                      type="button"
+                      key={game.id}
+                      className={`admin-orders-game-card${selectedPackageGame === game.id ? " is-selected" : ""}`}
+                      aria-pressed={selectedPackageGame === game.id}
+                      onClick={() => {
+                        setSelectedPackageGame(game.id);
+                        setPackageQuery("");
+                      }}
+                    >
+                      <img src={game.image} alt="" loading="lazy" />
+                      <span>{game.name}</span>
+                      <small>
+                        {selectedPackageGame === game.id ? "Selected" : "View packages"}
+                      </small>
+                    </button>
+                  ))}
               </div>
             </div>
           )}
-          {loading ? (
-            <div className="admin-loading-state" role="status">
-              <span className="admin-loading-orb" /> Loading live records…
-            </div>
-          ) : collection === "products" && records.length === 0 ? (
-            <div className="admin-empty-state">
-              <Package size={24} />
-              <strong>No packages yet</strong>
-              <span>
-                Create your first package and it will appear on the storefront as soon as it is
-                active.
-              </span>
-              {!readOnly && (
-                <Button className="admin-primary-button" size="sm" onClick={() => edit(null)}>
-                  <Plus size={15} /> New package
+          {collection === "products" && !selectedPackageGame ? null : (
+            <>
+              <div className="admin-panel-header">
+                <div>
+                  <span className="admin-panel-eyebrow">
+                    {collection === "products" ? "PACKAGE CATALOG" : "LIVE COLLECTION"}
+                  </span>
+                  <h2>
+                    {collection === "products" ? "Packages" : "Firestore records"}{" "}
+                    <span className="admin-count-pill">
+                      {collection === "products" && selectedPackageGame
+                        ? visibleRecords.length
+                        : collection === "products" && visibleRecords.length !== records.length
+                          ? `${visibleRecords.length}/${records.length}`
+                          : records.length}
+                    </span>
+                  </h2>
+                </div>
+                <div className="admin-panel-actions">
+                  <Button
+                    className="admin-quiet-button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void load()}
+                    disabled={loading}
+                  >
+                    <RefreshCw size={14} /> Refresh
+                  </Button>
+                  {!readOnly && (
+                    <Button className="admin-primary-button" size="sm" onClick={() => edit(null)}>
+                      <Plus size={15} /> {collection === "products" ? "New package" : "New record"}
+                    </Button>
+                  )}
+                </div>
+              </div>
+              {collection === "products" && (
+                <div className="admin-package-toolbar">
+                  <label className="admin-package-search">
+                    <Search size={14} aria-hidden="true" />
+                    <input
+                      type="search"
+                      value={packageQuery}
+                      onChange={(event) => setPackageQuery(event.target.value)}
+                      placeholder="Search packages by name, ID, or game"
+                      aria-label="Search packages"
+                    />
+                  </label>
+                  <div className="admin-package-filter" role="group" aria-label="Filter packages">
+                    {(
+                      [
+                        ["all", "All"],
+                        ["active", "Live"],
+                        ["archived", "Archived"],
+                      ] as const
+                    ).map(([value, label]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        className={packageStatus === value ? "is-active" : undefined}
+                        aria-pressed={packageStatus === value}
+                        onClick={() => setPackageStatus(value)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {loading ? (
+                <div className="admin-loading-state" role="status">
+                  <span className="admin-loading-orb" /> Loading live records…
+                </div>
+              ) : collection === "products" && records.length === 0 ? (
+                <div className="admin-empty-state">
+                  <Package size={24} />
+                  <strong>No packages yet</strong>
+                  <span>
+                    Create your first package and it will appear on the storefront as soon as it is
+                    active.
+                  </span>
+                  {!readOnly && (
+                    <Button className="admin-primary-button" size="sm" onClick={() => edit(null)}>
+                      <Plus size={15} /> New package
+                    </Button>
+                  )}
+                </div>
+              ) : collection === "products" && productGroups ? (
+                visibleRecords.length === 0 ? (
+                  <div className="admin-empty-state">
+                    <Search size={24} />
+                    <strong>No packages match</strong>
+                    <span>Try another search term, or reset the status filter.</span>
+                    <Button
+                      className="admin-quiet-button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setPackageQuery("");
+                        setPackageStatus("all");
+                      }}
+                    >
+                      Clear filters
+                    </Button>
+                  </div>
+                ) : (
+                  <AdminProductGroups
+                    groups={productGroups}
+                    renderRecord={renderRecord}
+                    onAddPackage={(gameSlug, category) => edit(null, { gameSlug, category })}
+                  />
+                )
+              ) : records.length === 0 ? (
+                <div className="admin-empty-state">
+                  <Database size={24} />
+                  <strong>No records yet</strong>
+                  <span>Create your first Firestore record to populate this collection.</span>
+                </div>
+              ) : (
+                <div className="admin-record-list">{records.map(renderRecord)}</div>
+              )}
+              {nextPageToken && (
+                <Button
+                  className="admin-load-more"
+                  variant="outline"
+                  onClick={() => void load(nextPageToken, true)}
+                  disabled={loading}
+                >
+                  {loading ? "Loading…" : "Load more records"}
                 </Button>
               )}
-            </div>
-          ) : collection === "products" && productGroups ? (
-            visibleRecords.length === 0 ? (
-              <div className="admin-empty-state">
-                <Search size={24} />
-                <strong>No packages match</strong>
-                <span>Try another search term, or reset the status filter.</span>
-                <Button
-                  className="admin-quiet-button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setPackageQuery("");
-                    setPackageStatus("all");
-                  }}
-                >
-                  Clear filters
-                </Button>
-              </div>
-            ) : (
-              <AdminProductGroups
-                groups={productGroups}
-                renderRecord={renderRecord}
-                onAddPackage={(gameSlug, category) => edit(null, { gameSlug, category })}
-              />
-            )
-          ) : records.length === 0 ? (
-            <div className="admin-empty-state">
-              <Database size={24} />
-              <strong>No records yet</strong>
-              <span>Create your first Firestore record to populate this collection.</span>
-            </div>
-          ) : (
-            <div className="admin-record-list">{records.map(renderRecord)}</div>
-          )}
-          {nextPageToken && (
-            <Button
-              className="admin-load-more"
-              variant="outline"
-              onClick={() => void load(nextPageToken, true)}
-              disabled={loading}
-            >
-              {loading ? "Loading…" : "Load more records"}
-            </Button>
+            </>
           )}
         </section>
 
@@ -2291,6 +2365,7 @@ export function AdminPackages() {
       description="Manage package names, delivery details, and LKR prices. Archived packages stay hidden from customers."
       collection="products"
       template={templates.products}
+      packagesOnly
     />
   );
 }
