@@ -147,14 +147,14 @@ export const checkAdminSession = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { assertEmailVerified, getAdminAuth } = await import("@/server/firebase-admin");
     const decoded = await getAdminAuth().verifyIdToken(data.idToken, true);
-    assertEmailVerified(decoded);
-
     const allowedUids = (process.env["ADMIN_UIDS"] ?? "")
       .split(",")
       .map((uid) => uid.trim())
       .filter(Boolean);
     if (!allowedUids.length) throw new Error("Admin access is not configured on the server.");
-    return { isAdmin: allowedUids.includes(decoded.uid) };
+    if (!allowedUids.includes(decoded.uid)) return { isAdmin: false };
+    assertEmailVerified(decoded);
+    return { isAdmin: true };
   });
 
 export const listAdminRecords = createServerFn({ method: "POST" })

@@ -549,10 +549,10 @@ export function StoreFooter() {
             </span>
             <a
               className="footer-developer"
-              href="https://wa.me/9477534204"
+              href="https://wa.me/94775352074"
               target="_blank"
               rel="noopener noreferrer"
-              title="Chat with Pathum Software Solutions on WhatsApp (+94 77 534 204)"
+              title="Chat with Pathum Software Solutions on WhatsApp (+94 77 535 2074)"
               aria-label="Chat with Pathum Software Solutions on WhatsApp"
             >
               <span className="footer-developer-mark" aria-hidden="true">

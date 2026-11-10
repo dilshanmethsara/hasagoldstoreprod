@@ -11,7 +11,7 @@ import { checkAdminSession } from "@/api/admin";
  */
 export function useAdminSession(uid: string | null | undefined) {
   return useQuery({
-    queryKey: ["adminSession", uid ?? null],
+    queryKey: ["adminSession", uid ?? null, getFirebaseAuth().currentUser?.uid ?? null],
     queryFn: async () => {
       const user = getFirebaseAuth().currentUser;
       if (!user) return { isAdmin: false };
@@ -25,6 +25,9 @@ export function useAdminSession(uid: string | null | undefined) {
     },
     enabled: Boolean(uid),
     staleTime: 0,
+    gcTime: 5 * 60_000,
     refetchOnMount: true,
+    refetchOnWindowFocus: false,
+    placeholderData: undefined,
   });
 }

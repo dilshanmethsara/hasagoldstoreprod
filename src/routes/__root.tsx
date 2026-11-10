@@ -22,6 +22,7 @@ import { WalletProvider } from "@/components/wallet-context";
 import { Toaster } from "@/components/ui/sonner";
 import { fetchStoreSettings } from "@/lib/firestore";
 import { MaintenanceScreen } from "@/components/maintenance-screen";
+import { useAdminSession } from "@/lib/admin-session";
 
 function NotFoundComponent() {
   return (
@@ -136,7 +137,7 @@ function RootShell({ children }: { children: ReactNode }) {
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   const { pathname } = useLocation();
-  const admin = pathname.startsWith("/admin");
+  const admin = pathname === "/admin" || pathname.startsWith("/admin/");
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -152,6 +153,7 @@ function RootComponent() {
 /** Pass the authenticated Firebase UID to the wallet subscription. */
 function WalletBridge({ admin }: { admin: boolean }) {
   const { uid, user, ready, profileCompletionInProgress } = useAccount();
+  const { data: adminSession, isLoading: adminSessionLoading } = useAdminSession(uid);
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const { data: storeSettings } = useQuery({
@@ -161,8 +163,11 @@ function WalletBridge({ admin }: { admin: boolean }) {
   });
 
   const isMaintenanceActive = Boolean(storeSettings?.maintenanceMode);
-  // Admin routes and login bypass maintenance mode so administrator can manage the store
-  const isBypassRoute = admin || pathname === "/admin-login";
+  const authorizedAdmin = adminSession?.isAdmin === true;
+  const isAdminLogin = pathname === "/admin-login";
+  const isAdminRoute = admin && !isAdminLogin;
+  // Only a server-authorized administrator may access the admin workspace or bypass maintenance.
+  const isBypassRoute = (isAdminRoute && authorizedAdmin) || isAdminLogin;
 
   const mustCompleteProfile =
     ready && !profileCompletionInProgress && user?.profileComplete === false;
@@ -179,7 +184,9 @@ function WalletBridge({ admin }: { admin: boolean }) {
 
   return (
     <WalletProvider uid={uid}>
-      {isMaintenanceActive && !isBypassRoute ? (
+      {isAdminRoute && (!ready || adminSessionLoading || !authorizedAdmin) ? (
+        <NotFoundComponent />
+      ) : isMaintenanceActive && !isBypassRoute ? (
         <>
           <MaintenanceScreen settings={storeSettings ?? null} />
           <Toaster />

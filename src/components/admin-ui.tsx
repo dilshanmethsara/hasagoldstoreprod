@@ -57,6 +57,7 @@ import {
   fetchApiFaqs,
 } from "@/lib/api-client";
 import { signInWithAdminPassword } from "@/api/admin";
+import { useAdminSession } from "@/lib/admin-session";
 import type { AdminDocument } from "@/api/admin";
 import { Button } from "@/components/ui/button";
 import hasaLogo from "@/assets/newhasalogo.png";
@@ -507,7 +508,7 @@ function AdminDataPage({
   const [selected, setSelected] = useState<AdminRecord | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [form, setForm] = useState<AdminFormState>({});
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [nextPageToken, setNextPageToken] = useState<string | null>(null);
@@ -541,10 +542,6 @@ function AdminDataPage({
     },
     [collection, ready, uid],
   );
-
-  useEffect(() => {
-    void load();
-  }, [load]);
 
   function edit(record: AdminRecord | null, defaults?: AdminRecord) {
     setSelected(record);
@@ -2192,6 +2189,26 @@ const templates: Record<"games" | "products" | "gameAccounts", AdminRecord> = {
 };
 
 export function AdminLayout() {
+  const { uid, ready } = useAccount();
+  const { data: adminSession, isLoading } = useAdminSession(uid);
+
+  if (!ready || isLoading || !adminSession?.isAdmin) {
+    return (
+      <main className="container min-h-screen bg-background" aria-label="Page not found">
+        <div className="flex min-h-[70vh] flex-col items-center justify-center text-center">
+          <span className="text-7xl font-extrabold tracking-tight text-primary">404</span>
+          <h1 className="mt-4 text-2xl font-bold text-foreground">Page not found</h1>
+          <p className="mt-2 max-w-sm text-sm text-muted-foreground">
+            The page you’re looking for doesn’t exist or may have moved.
+          </p>
+          <Link to="/" className="mt-6 text-sm font-semibold text-primary hover:underline">
+            Return to the store
+          </Link>
+        </div>
+      </main>
+    );
+  }
+
   return <Outlet />;
 }
 
@@ -2320,6 +2337,7 @@ function isPaymentStatus(value: unknown): value is PaymentStatus {
 
 function AdminOrdersPage() {
   const { ready, uid } = useAccount();
+  const { data: liveGames = [], isLoading: gamesLoading } = useGames();
   const [orders, setOrders] = useState<AdminDocument[]>([]);
   const [drafts, setDrafts] = useState<
     Record<string, { status: OrderStatus; paymentStatus: PaymentStatus }>
@@ -2332,6 +2350,9 @@ function AdminOrdersPage() {
   const [error, setError] = useState<string | null>(null);
   const [orderSearch, setOrderSearch] = useState("");
   const [orderSearchActive, setOrderSearchActive] = useState(false);
+  const [selectedGameSlug, setSelectedGameSlug] = useState<string | null>(null);
+
+  const activeGames = liveGames.filter((game) => game.active);
 
   const load = useCallback(
     async (pageToken?: string, append = false) => {
@@ -2370,6 +2391,50 @@ function AdminOrdersPage() {
     },
     [ready, uid],
   );
+
+  const selectGame = useCallback((gameSlug: string) => {
+    setSelectedGameSlug(gameSlug);
+    setOrderSearchActive(false);
+    setOrderSearch("");
+    setLoading(true);
+    setError(null);
+    setNextPageToken(null);
+    void (async () => {
+      try {
+        const allPages: Record<string, unknown>[] = [];
+        let pageToken: string | undefined;
+        let pageCount = 0;
+        do {
+          const result = await fetchAdminCollection("orders", pageToken);
+          allPages.push(...result.items);
+          pageToken = result.nextPageToken ?? undefined;
+          pageCount += 1;
+        } while (pageToken && pageCount < 100);
+        const matchingOrders = allPages.filter((order) => order["gameSlug"] === gameSlug);
+        setOrders(matchingOrders as unknown as AdminDocument[]);
+        setDrafts((current) => ({
+          ...current,
+          ...Object.fromEntries(
+            matchingOrders.map((order) => [
+              order["id"],
+              {
+                status: isOrderStatus(order["status"]) ? order["status"] : "pending",
+                paymentStatus: isPaymentStatus(order["paymentStatus"])
+                  ? order["paymentStatus"]
+                  : "unpaid",
+              },
+            ]),
+          ),
+        }));
+        setNextPageToken(null);
+      } catch (cause) {
+        setOrders([]);
+        setError(cause instanceof Error ? cause.message : "Orders could not be loaded.");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     void load();
@@ -2415,7 +2480,8 @@ function AdminOrdersPage() {
   function clearOrderSearch() {
     setOrderSearch("");
     setOrderSearchActive(false);
-    void load();
+    if (selectedGameSlug) selectGame(selectedGameSlug);
+    else void load();
   }
 
   async function saveStatus(orderId: string) {
@@ -2489,232 +2555,299 @@ function AdminOrdersPage() {
       description="Review payment proofs and manage order fulfillment statuses."
     >
       <section className="admin-panel admin-records-panel">
-        <form className="admin-lookup-form" onSubmit={(event) => void searchOrder(event)}>
-          <input
-            id="admin-order-id-search"
-            aria-label="Search by order number"
-            className="admin-form-input admin-lookup-input"
-            value={orderSearch}
-            onChange={(event) => setOrderSearch(event.target.value)}
-            placeholder="Enter order number"
-            maxLength={128}
-          />
-          <Button type="submit" className="admin-quiet-button" variant="outline" disabled={loading}>
-            <Search size={14} /> Find order
-          </Button>
-          {orderSearchActive && (
-            <Button
-              type="button"
-              className="admin-quiet-button"
-              variant="ghost"
-              onClick={clearOrderSearch}
-              disabled={loading}
-            >
-              Clear search
-            </Button>
-          )}
-        </form>
-        <div className="admin-panel-header">
-          <div>
-            <span className="admin-panel-eyebrow">LIVE COLLECTION</span>
-            <h2>
-              Firestore orders <span className="admin-count-pill">{orders.length}</span>
-            </h2>
+        <div className="admin-orders-games">
+          <div className="admin-panel-header">
+            <div>
+              <span className="admin-panel-eyebrow">LIVE STORE CATALOG</span>
+              <h2>Choose a game</h2>
+            </div>
           </div>
-          <Button
-            className="admin-quiet-button"
-            variant="outline"
-            size="sm"
-            onClick={() => void load()}
-            disabled={loading}
-          >
-            <RefreshCw size={14} /> Refresh
-          </Button>
-        </div>
-        {failedOrderCount > 0 && (
-          <div className="admin-failure-callout" role="status">
-            <AlertTriangle size={15} />
-            <span>
-              {failedOrderCount}{" "}
-              {failedOrderCount === 1 ? "order on this page needs" : "orders on this page need"}{" "}
-              automatic top-up attention.
-            </span>
-            <Link to="/admin/topup-failures">Review top-up failures</Link>
-          </div>
-        )}
-        {error && (
-          <p className="admin-error-banner" role="alert">
-            {error}
-          </p>
-        )}
-        {loading ? (
-          <div className="admin-loading-state" role="status">
-            <span className="admin-loading-orb" /> Loading orders…
-          </div>
-        ) : orders.length === 0 ? (
-          <div className="admin-empty-state">
-            <ReceiptText size={24} />
-            <strong>{orderSearchActive ? "No matching order" : "No orders yet"}</strong>
-            <span>
-              {orderSearchActive
-                ? "Check the order number and try again."
-                : "Customer orders will appear here."}
-            </span>
-          </div>
-        ) : (
-          <div className="admin-record-list">
-            {orders.map((order) => {
-              const draft = drafts[order.id] ?? { status: "pending", paymentStatus: "unpaid" };
-              const hasProof = typeof order["paymentProofStoragePath"] === "string";
-              const failureKind =
-                order["gameSlug"] === "free-fire"
-                  ? nexauraFailureKind(order["nexauraStatus"])
-                  : null;
-              const failureTone = failureKind === "submission_unknown" ? "is-warning" : "is-danger";
-              const failureRowTone =
-                failureKind === "submission_unknown" ? "is-nexaura-warning" : "is-nexaura-failed";
-              return (
-                <article
-                  key={order.id}
-                  className={`admin-record-row admin-order-row${failureKind ? ` ${failureRowTone}` : ""}`}
+          {gamesLoading ? (
+            <div className="admin-loading-state" role="status">
+              <span className="admin-loading-orb" /> Loading active games…
+            </div>
+          ) : activeGames.length ? (
+            <div className="admin-orders-game-grid">
+              {activeGames.map((game) => (
+                <button
+                  type="button"
+                  key={game.id}
+                  className={`admin-orders-game-card${selectedGameSlug === game.id ? " is-selected" : ""}`}
+                  aria-pressed={selectedGameSlug === game.id}
+                  onClick={() => selectGame(game.id)}
                 >
-                  <span className={`admin-record-symbol${failureKind ? ` ${failureTone}` : ""}`}>
-                    {failureKind ? <AlertTriangle size={17} /> : <ReceiptText size={17} />}
-                  </span>
-                  <div className="admin-record-main">
-                    <div className="admin-record-headline">
-                      <p className="admin-record-title">
-                        {String(order["packageName"] ?? "Top-up order")}
-                      </p>
-                      {failureKind && (
-                        <span className={`admin-status-pill ${failureTone}`}>
-                          <i /> {nexauraFailureLabel(failureKind)}
-                        </span>
-                      )}
-                    </div>
-                    <p className="admin-record-meta">
-                      <code>{order.id}</code>
-                      <span>·</span>
-                      {String(order["customerEmail"] ?? order["customerUid"] ?? "Customer")}
-                      <span>·</span>
-                      {String(order["gameName"] ?? order["gameSlug"] ?? "")}
-                      <span>·</span>
-                      Player {String(order["playerId"] ?? "—")}
-                      <span>·</span>
-                      LKR {Number(order["pricePkr"] ?? 0).toLocaleString()}
-                      <span>·</span>
-                      {String(order["paymentMethod"] ?? "Unknown method")}
-                    </p>
-                    {order["gameSlug"] === "free-fire" && (
-                      <p className="admin-record-meta">
-                        Nexaura: {String(order["nexauraStatus"] ?? "awaiting payment")}
-                        {typeof order["nexauraOrderId"] === "string" && (
-                          <>
-                            <span>·</span>
-                            Provider order {order["nexauraOrderId"]}
-                          </>
-                        )}
-                        <span>·</span>
-                        {formatDateTime(order["createdAt"])}
-                      </p>
-                    )}
-                    {failureKind && (
-                      <p className={`admin-nexaura-reason ${failureTone}`}>
-                        <AlertTriangle size={13} />
-                        <span>
-                          <strong>{nexauraFailureLabel(failureKind)}:</strong>{" "}
-                          {nexauraFailureReason(order)}
-                        </span>
-                      </p>
-                    )}
-                    <div className="admin-order-controls">
-                      <label>
-                        Order status
-                        <select
-                          className="admin-form-input admin-form-select"
-                          value={draft.status}
-                          onChange={(event) => {
-                            const status = event.target.value;
-                            if (!isOrderStatus(status)) return;
-                            setDrafts((current) => ({
-                              ...current,
-                              [order.id]: {
-                                ...draft,
-                                status,
-                              },
-                            }));
-                          }}
-                        >
-                          {ORDER_STATUSES.map((status) => (
-                            <option value={status} key={status}>
-                              {status.replaceAll("_", " ")}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label>
-                        Payment status
-                        <select
-                          className="admin-form-input admin-form-select"
-                          value={draft.paymentStatus}
-                          onChange={(event) => {
-                            const paymentStatus = event.target.value;
-                            if (!isPaymentStatus(paymentStatus)) return;
-                            setDrafts((current) => ({
-                              ...current,
-                              [order.id]: {
-                                ...draft,
-                                paymentStatus,
-                              },
-                            }));
-                          }}
-                        >
-                          {PAYMENT_STATUSES.map((status) => (
-                            <option value={status} key={status}>
-                              {status.replaceAll("_", " ")}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <Button
-                        className="admin-primary-button"
-                        size="sm"
-                        disabled={savingId === order.id}
-                        onClick={() => void saveStatus(order.id)}
+                  <img src={game.image} alt="" loading="lazy" />
+                  <span>{game.name}</span>
+                  <small>{selectedGameSlug === game.id ? "Selected" : "View orders"}</small>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="admin-empty-state">
+              <Gamepad2 size={22} />
+              <strong>No active games</strong>
+              <span>Enable a game in the live catalog to manage its orders.</span>
+            </div>
+          )}
+        </div>
+        {selectedGameSlug && (
+          <>
+            <form className="admin-lookup-form" onSubmit={(event) => void searchOrder(event)}>
+              <input
+                id="admin-order-id-search"
+                aria-label="Search by order number"
+                className="admin-form-input admin-lookup-input"
+                value={orderSearch}
+                onChange={(event) => setOrderSearch(event.target.value)}
+                placeholder="Enter order number"
+                maxLength={128}
+              />
+              <Button
+                type="submit"
+                className="admin-quiet-button"
+                variant="outline"
+                disabled={loading}
+              >
+                <Search size={14} /> Find order
+              </Button>
+              {orderSearchActive && (
+                <Button
+                  type="button"
+                  className="admin-quiet-button"
+                  variant="ghost"
+                  onClick={clearOrderSearch}
+                  disabled={loading}
+                >
+                  Clear search
+                </Button>
+              )}
+            </form>
+            <div className="admin-panel-header">
+              <div>
+                <span className="admin-panel-eyebrow">LIVE COLLECTION</span>
+                <h2>
+                  {`${activeGames.find((game) => game.id === selectedGameSlug)?.name ?? "Game"} orders`}{" "}
+                  <span className="admin-count-pill">{orders.length}</span>
+                </h2>
+              </div>
+              <Button
+                className="admin-quiet-button"
+                variant="outline"
+                size="sm"
+                onClick={() => selectGame(selectedGameSlug)}
+                disabled={loading}
+              >
+                <RefreshCw size={14} /> Refresh
+              </Button>
+            </div>
+            {failedOrderCount > 0 && (
+              <div className="admin-failure-callout" role="status">
+                <AlertTriangle size={15} />
+                <span>
+                  {failedOrderCount}{" "}
+                  {failedOrderCount === 1 ? "order on this page needs" : "orders on this page need"}{" "}
+                  automatic top-up attention.
+                </span>
+                <Link to="/admin/topup-failures">Review top-up failures</Link>
+              </div>
+            )}
+            {error && (
+              <p className="admin-error-banner" role="alert">
+                {error}
+              </p>
+            )}
+            {loading ? (
+              <div className="admin-loading-state" role="status">
+                <span className="admin-loading-orb" /> Loading orders…
+              </div>
+            ) : orders.length === 0 ? (
+              <div className="admin-empty-state">
+                <ReceiptText size={24} />
+                <strong>{orderSearchActive ? "No matching order" : "No orders yet"}</strong>
+                <span>
+                  {orderSearchActive
+                    ? "Check the order number and try again."
+                    : "Customer orders will appear here."}
+                </span>
+              </div>
+            ) : (
+              <div className="admin-record-list">
+                {orders.map((order) => {
+                  const draft = drafts[order.id] ?? { status: "pending", paymentStatus: "unpaid" };
+                  const hasProof = typeof order["paymentProofStoragePath"] === "string";
+                  const failureKind =
+                    order["gameSlug"] === "free-fire"
+                      ? nexauraFailureKind(order["nexauraStatus"])
+                      : null;
+                  const failureTone =
+                    failureKind === "submission_unknown" ? "is-warning" : "is-danger";
+                  const failureRowTone =
+                    failureKind === "submission_unknown"
+                      ? "is-nexaura-warning"
+                      : "is-nexaura-failed";
+                  return (
+                    <article
+                      key={order.id}
+                      className={`admin-record-row admin-order-row${failureKind ? ` ${failureRowTone}` : ""}`}
+                    >
+                      <span
+                        className={`admin-record-symbol${failureKind ? ` ${failureTone}` : ""}`}
                       >
-                        {savingId === order.id ? "Saving…" : "Save statuses"}
-                      </Button>
-                      {hasProof &&
-                        (proofUrls[order.id] ? (
-                          <a href={proofUrls[order.id]} target="_blank" rel="noreferrer">
-                            View payment proof
-                          </a>
-                        ) : (
+                        {failureKind ? <AlertTriangle size={17} /> : <ReceiptText size={17} />}
+                      </span>
+                      <div className="admin-record-main">
+                        <div className="admin-record-headline">
+                          <p className="admin-record-title">
+                            {String(order["packageName"] ?? "Top-up order")}
+                          </p>
+                          {failureKind && (
+                            <span className={`admin-status-pill ${failureTone}`}>
+                              <i /> {nexauraFailureLabel(failureKind)}
+                            </span>
+                          )}
+                        </div>
+                        <div className="admin-order-facts">
+                          <div className="admin-order-fact admin-order-fact-id">
+                            <span>Order number</span>
+                            <code>{order.id}</code>
+                          </div>
+                          <div className="admin-order-fact">
+                            <span>Customer</span>
+                            <strong>
+                              {String(order["customerEmail"] ?? order["customerUid"] ?? "Customer")}
+                            </strong>
+                          </div>
+                          <div className="admin-order-fact">
+                            <span>Game</span>
+                            <strong>{String(order["gameName"] ?? order["gameSlug"] ?? "—")}</strong>
+                          </div>
+                          <div className="admin-order-fact">
+                            <span>Player ID</span>
+                            <strong>{String(order["playerId"] ?? "—")}</strong>
+                          </div>
+                          <div className="admin-order-fact admin-order-fact-price">
+                            <span>Total</span>
+                            <strong>LKR {Number(order["pricePkr"] ?? 0).toLocaleString()}</strong>
+                          </div>
+                          <div className="admin-order-fact">
+                            <span>Payment method</span>
+                            <strong>{String(order["paymentMethod"] ?? "Unknown method")}</strong>
+                          </div>
+                          <div className="admin-order-fact">
+                            <span>Placed</span>
+                            <strong>{formatDateTime(order["createdAt"])}</strong>
+                          </div>
+                        </div>
+                        {order["gameSlug"] === "free-fire" && (
+                          <p className="admin-record-meta">
+                            Nexaura: {String(order["nexauraStatus"] ?? "awaiting payment")}
+                            {typeof order["nexauraOrderId"] === "string" && (
+                              <>
+                                <span>·</span>
+                                Provider order {order["nexauraOrderId"]}
+                              </>
+                            )}
+                          </p>
+                        )}
+                        {failureKind && (
+                          <p className={`admin-nexaura-reason ${failureTone}`}>
+                            <AlertTriangle size={13} />
+                            <span>
+                              <strong>{nexauraFailureLabel(failureKind)}:</strong>{" "}
+                              {nexauraFailureReason(order)}
+                            </span>
+                          </p>
+                        )}
+                        <div className="admin-order-controls">
+                          <label>
+                            Order status
+                            <select
+                              className="admin-form-input admin-form-select"
+                              value={draft.status}
+                              onChange={(event) => {
+                                const status = event.target.value;
+                                if (!isOrderStatus(status)) return;
+                                setDrafts((current) => ({
+                                  ...current,
+                                  [order.id]: {
+                                    ...draft,
+                                    status,
+                                  },
+                                }));
+                              }}
+                            >
+                              {ORDER_STATUSES.map((status) => (
+                                <option value={status} key={status}>
+                                  {status.replaceAll("_", " ")}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label>
+                            Payment status
+                            <select
+                              className="admin-form-input admin-form-select"
+                              value={draft.paymentStatus}
+                              onChange={(event) => {
+                                const paymentStatus = event.target.value;
+                                if (!isPaymentStatus(paymentStatus)) return;
+                                setDrafts((current) => ({
+                                  ...current,
+                                  [order.id]: {
+                                    ...draft,
+                                    paymentStatus,
+                                  },
+                                }));
+                              }}
+                            >
+                              {PAYMENT_STATUSES.map((status) => (
+                                <option value={status} key={status}>
+                                  {status.replaceAll("_", " ")}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
                           <Button
-                            variant="outline"
+                            className="admin-primary-button"
                             size="sm"
-                            disabled={proofLoadingId === order.id}
-                            onClick={() => void loadProof(order.id)}
+                            disabled={savingId === order.id}
+                            onClick={() => void saveStatus(order.id)}
                           >
-                            {proofLoadingId === order.id ? "Preparing…" : "View payment proof"}
+                            {savingId === order.id ? "Saving…" : "Save statuses"}
                           </Button>
-                        ))}
-                    </div>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        )}
-        {nextPageToken && !orderSearchActive && (
-          <Button
-            className="admin-load-more"
-            variant="outline"
-            onClick={() => void load(nextPageToken, true)}
-            disabled={loading}
-          >
-            {loading ? "Loading…" : "Load more orders"}
-          </Button>
+                          {hasProof &&
+                            (proofUrls[order.id] ? (
+                              <a href={proofUrls[order.id]} target="_blank" rel="noreferrer">
+                                View payment proof
+                              </a>
+                            ) : (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={proofLoadingId === order.id}
+                                onClick={() => void loadProof(order.id)}
+                              >
+                                {proofLoadingId === order.id ? "Preparing…" : "View payment proof"}
+                              </Button>
+                            ))}
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+            {nextPageToken && !orderSearchActive && !selectedGameSlug && (
+              <Button
+                className="admin-load-more"
+                variant="outline"
+                onClick={() => void load(nextPageToken, true)}
+                disabled={loading}
+              >
+                {loading ? "Loading…" : "Load more orders"}
+              </Button>
+            )}
+          </>
         )}
       </section>
     </AdminShell>
