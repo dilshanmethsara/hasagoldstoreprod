@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import confetti from "canvas-confetti";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -418,8 +419,75 @@ function CheckoutPage() {
 
   useEffect(() => {
     if (!showOrderCelebration) return;
+
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduceMotion) {
+      const timeoutId = window.setTimeout(() => setShowOrderCelebration(false), 1200);
+      return () => window.clearTimeout(timeoutId);
+    }
+
+    const gold = ["#ffd86a", "#f0b429", "#fff3bf", "#e9ad36", "#ffffff"];
+    const timers: number[] = [];
+
+    // Center pop
+    confetti({
+      particleCount: 90,
+      spread: 78,
+      startVelocity: 46,
+      gravity: 0.9,
+      ticks: 200,
+      scalar: 1.05,
+      origin: { x: 0.5, y: 0.55 },
+      colors: gold,
+      disableForReducedMotion: true,
+    });
+
+    // Two side cannons for a wider crown
+    timers.push(
+      window.setTimeout(() => {
+        confetti({
+          particleCount: 55,
+          angle: 60,
+          spread: 62,
+          startVelocity: 52,
+          origin: { x: 0.08, y: 0.72 },
+          colors: gold,
+          disableForReducedMotion: true,
+        });
+        confetti({
+          particleCount: 55,
+          angle: 120,
+          spread: 62,
+          startVelocity: 52,
+          origin: { x: 0.92, y: 0.72 },
+          colors: gold,
+          disableForReducedMotion: true,
+        });
+      }, 180),
+    );
+
+    // Gentle top drizzle
+    timers.push(
+      window.setTimeout(() => {
+        confetti({
+          particleCount: 40,
+          spread: 140,
+          startVelocity: 22,
+          gravity: 0.62,
+          ticks: 260,
+          scalar: 0.82,
+          origin: { x: 0.5, y: 0 },
+          colors: gold,
+          disableForReducedMotion: true,
+        });
+      }, 380),
+    );
+
     const timeoutId = window.setTimeout(() => setShowOrderCelebration(false), 2600);
-    return () => window.clearTimeout(timeoutId);
+    return () => {
+      window.clearTimeout(timeoutId);
+      timers.forEach((id) => window.clearTimeout(id));
+    };
   }, [showOrderCelebration]);
   const isNexauraCheckout = paymentMethod === "wallet" && searchParams.game === "free-fire";
   const isAwaitingNexaura =
@@ -1299,31 +1367,6 @@ function CheckoutPage() {
       )}
 
       {/* ── Receipt dialog ── */}
-      {showOrderCelebration && completedOrder && !isAwaitingNexaura && (
-        <div className="order-celebration" aria-hidden="true">
-          <div className="order-celebration-glow" />
-          <div className="order-celebration-coins">
-            {Array.from({ length: 24 }, (_, index) => (
-              <span
-                className="order-flying-coin"
-                key={`${completedOrder.orderId}-${index}`}
-                style={
-                  {
-                    "--coin-left": `${(index * 41 + 7) % 100}%`,
-                    "--coin-size": `${22 + ((index * 13) % 24)}px`,
-                    "--coin-drift": `${((index * 37) % 160) - 80}px`,
-                    "--coin-duration": `${3.3 + ((index * 19) % 30) / 10}s`,
-                    "--coin-delay": `${-((index * 23) % 45) / 10}s`,
-                    "--coin-spin": `${index % 2 ? 540 : -540}deg`,
-                  } as React.CSSProperties
-                }
-              >
-                <span>H</span>
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
       <Dialog
         open={Boolean(completedOrder) || (isNexauraCheckout && processingOrder)}
         onOpenChange={(open) => {

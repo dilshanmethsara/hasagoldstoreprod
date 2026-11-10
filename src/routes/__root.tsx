@@ -15,7 +15,12 @@ import { useEffect, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { reportError } from "../lib/error-reporting";
 import { StoreProvider } from "@/components/store-context";
-import { StoreHeader, StoreFooter, BottomNavigation } from "@/components/store-ui";
+import {
+  StoreHeader,
+  StoreFooter,
+  BottomNavigation,
+  FloatingWhatsAppButton,
+} from "@/components/store-ui";
 import { Button } from "@/components/ui/button";
 import { AccountProvider, useAccount } from "@/components/account-context";
 import { WalletProvider } from "@/components/wallet-context";
@@ -212,6 +217,7 @@ function WalletBridge({ admin }: { admin: boolean }) {
               </main>
               <StoreFooter />
               <BottomNavigation />
+              <FloatingWhatsAppButton />
             </>
           )}
           <Toaster />

@@ -17,6 +17,8 @@ import { Button } from "@/components/ui/button";
 import { CatalogGrid, Steps, SupportBand, FAQ, LatestTopups } from "@/components/store-ui";
 import { pageHead } from "@/lib/store-data";
 import { resolveArtwork, useGameAccounts, useGames } from "@/lib/firestore";
+import { useQuery } from "@tanstack/react-query";
+import { fetchApiCatalog } from "@/lib/api-client";
 import hero from "@/assets/diamond-world.jpg";
 
 export const Route = createFileRoute("/")({
@@ -45,7 +47,16 @@ function Index() {
   // Game names and counts come from the live catalog, so the homepage can never
   // advertise a game that is not actually available.
   const { data: games = [] } = useGames();
-  const gameNames = games.map((game) => game.name.replace(/\s*\(.*?\)\s*$/, "")).filter(Boolean);
+  const activeGames = games.filter((game) => game.active);
+  const { data: catalog } = useQuery({
+    queryKey: ["publicCatalogStats"],
+    queryFn: fetchApiCatalog,
+    staleTime: 0,
+  });
+  const activePackageCount = catalog?.products.filter((product) => product.active).length;
+  const gameNames = activeGames
+    .map((game) => game.name.replace(/\s*\(.*?\)\s*$/, ""))
+    .filter(Boolean);
   const gameCount = gameNames.length;
   const gameList =
     gameNames.length > 0
@@ -262,6 +273,49 @@ function Index() {
           </div>
         </div>
       </div>
+      <section className="home-stats" aria-labelledby="home-stats-title">
+        <div className="home-stats-heading">
+          <span className="eyebrow">
+            <Sparkles size={13} /> THE STORE, AT A GLANCE
+          </span>
+          <h2 id="home-stats-title">A better way to top up</h2>
+          <p>Live catalog information and clear order support, all in one place.</p>
+        </div>
+        <div className="home-stats-grid">
+          <article className="home-stat-card home-stat-card-primary">
+            <span className="home-stat-icon">
+              <Gamepad2 size={20} />
+            </span>
+            <strong>{games.length ? activeGames.length : "—"}</strong>
+            <span>Active games</span>
+            <small>Available in our live catalog</small>
+          </article>
+          <article className="home-stat-card">
+            <span className="home-stat-icon">
+              <Package size={20} />
+            </span>
+            <strong>{activePackageCount ?? "—"}</strong>
+            <span>Active packages</span>
+            <small>Current top-up options</small>
+          </article>
+          <article className="home-stat-card">
+            <span className="home-stat-icon">
+              <ShieldCheck size={20} />
+            </span>
+            <strong>100+</strong>
+            <span>Customers</span>
+            <small>Thank you for choosing HASA GOLD STORE</small>
+          </article>
+          <article className="home-stat-card">
+            <span className="home-stat-icon">
+              <BadgeCheck size={20} />
+            </span>
+            <strong>100%</strong>
+            <span>Satisfaction</span>
+            <small>Here to support your top-up experience</small>
+          </article>
+        </div>
+      </section>
       <section className="home-section home-catalog-section">
         <div className="section-heading">
           <div>

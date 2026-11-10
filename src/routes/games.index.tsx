@@ -68,7 +68,7 @@ function GamesPage() {
           </Button>
         </div>
       ) : items.length ? (
-        <GameGrid items={items} />
+        <GameGrid items={items} variant="rich" />
       ) : (
         <EmptyState />
       )}

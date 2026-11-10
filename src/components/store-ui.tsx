@@ -1,5 +1,5 @@
 import { Link, useNavigate, useLocation } from "@tanstack/react-router";
-import { useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import {
   ArrowRight,
@@ -309,6 +309,8 @@ export function StoreHeader() {
   );
 }
 
+const ACTIVITY_PAGE_SIZE = 3;
+
 export function LatestTopups() {
   const { data, isLoading, isError } = useQuery({
     queryKey: ["publicRecentTopups"],
@@ -316,7 +318,42 @@ export function LatestTopups() {
     staleTime: 0,
     refetchInterval: 60_000,
   });
-  const orders = data?.orders ?? [];
+  const orders = useMemo(() => data?.orders ?? [], [data]);
+
+  const pages = Math.max(1, Math.ceil(orders.length / ACTIVITY_PAGE_SIZE));
+  const [page, setPage] = useState(0);
+  const [phase, setPhase] = useState<"in" | "out">("in");
+
+  // Reset when the data set changes size so we never point past the last page.
+  useEffect(() => {
+    setPage((current) => (current < pages ? current : 0));
+  }, [pages]);
+
+  // Only animate when there is more than one page of activity.
+  useEffect(() => {
+    if (pages < 2) {
+      setPhase("in");
+      return;
+    }
+    let swapTimer: ReturnType<typeof setTimeout> | undefined;
+    const cycle = setInterval(() => {
+      setPhase("out");
+      swapTimer = setTimeout(() => {
+        setPage((current) => (current + 1) % pages);
+        setPhase("in");
+      }, 500);
+    }, 5000);
+
+    return () => {
+      clearInterval(cycle);
+      if (swapTimer) clearTimeout(swapTimer);
+    };
+  }, [pages]);
+
+  const visible = orders.slice(
+    page * ACTIVITY_PAGE_SIZE,
+    page * ACTIVITY_PAGE_SIZE + ACTIVITY_PAGE_SIZE,
+  );
 
   return (
     <section className="latest-topups" aria-labelledby="latest-topups-title">
@@ -341,27 +378,43 @@ export function LatestTopups() {
           Completed top-ups will appear here when available.
         </div>
       ) : (
-        <div className="latest-topups-grid">
-          {orders.map((order, index) => (
-            <article className="latest-topup-card" key={`${order.updatedAt}-${index}`}>
-              <span className="latest-topup-icon">
-                <Diamond size={18} />
-              </span>
-              <div className="latest-topup-info">
-                <strong>{order.gameName}</strong>
-                <span>{order.packageName}</span>
-              </div>
-              <div className="latest-topup-meta">
-                <span className="latest-topup-status">
-                  <Check size={12} /> Completed
+        <ol
+          className={`activity-feed activity-phase-${phase}`}
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          {visible.map((order, index) => (
+            <li
+              className="activity-item"
+              key={`${page}-${order.updatedAt}-${index}`}
+              style={{ animationDelay: `${index * 70}ms` }}
+            >
+              <span className="activity-rail" aria-hidden="true">
+                <span className="activity-dot">
+                  <Check size={11} strokeWidth={3} />
                 </span>
-                <span className="latest-topup-time">
+              </span>
+              <article className="activity-card">
+                <span className="activity-icon">
+                  <Diamond size={17} />
+                </span>
+                <div className="activity-body">
+                  <div className="activity-title-row">
+                    <strong className="activity-game">{order.gameName}</strong>
+                    <span className="activity-badge">
+                      <Check size={10} strokeWidth={3} />{" "}
+                      {order.status === "delivered" ? "Delivered" : "Completed"}
+                    </span>
+                  </div>
+                  <span className="activity-package">{order.packageName}</span>
+                </div>
+                <span className="activity-time">
                   <Clock3 size={11} /> {timeAgo(order.updatedAt)}
                 </span>
-              </div>
-            </article>
+              </article>
+            </li>
           ))}
-        </div>
+        </ol>
       )}
       <p className="latest-topups-note">
         Only completed orders are shown. No Player IDs, names, or payment details are published.
@@ -586,6 +639,30 @@ export function StoreFooter() {
   );
 }
 
+export function FloatingWhatsAppButton() {
+  const { data: storeSettings } = useQuery({
+    queryKey: ["storeSettings"],
+    queryFn: fetchStoreSettings,
+    staleTime: 0,
+  });
+  const whatsapp = (storeSettings?.supportWhatsapp || "+94775352074").replace(/\D/g, "");
+
+  return (
+    <a
+      className="floating-whatsapp-button"
+      href={`https://wa.me/${whatsapp}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label="Chat with us on WhatsApp"
+      title="Chat with us on WhatsApp"
+    >
+      <span className="floating-whatsapp-pulse" aria-hidden="true" />
+      <MessageCircle size={25} strokeWidth={2.2} aria-hidden="true" />
+      <span className="floating-whatsapp-label">Chat with us</span>
+    </a>
+  );
+}
+
 export function FavoriteButton({ game }: { game: CatalogGame }) {
   const { favorites, toggleFavorite } = useStore();
   const saved = favorites.includes(game.id);
@@ -627,6 +704,10 @@ export function GameCard({ game }: { game: CatalogGame }) {
             <span className="game-active-badge-text">Active</span>
           </div>
         )}
+        <div className="game-art-currency">
+          {game.icon === "diamond" ? <Diamond size={11} /> : <Coins size={11} />}
+          {game.currency}
+        </div>
         <div className="art-game-name" aria-hidden="true">
           {game.id === "call-of-duty-mobile" ? (
             <>
@@ -646,13 +727,20 @@ export function GameCard({ game }: { game: CatalogGame }) {
           </h3>
           <ArrowUpRight size={18} />
         </div>
-        <p>
-          {game.icon === "diamond" ? <Diamond size={14} /> : <Coins size={14} />} {game.currency}{" "}
-          top-up
+        <p className="game-card-meta">
+          <span className="game-card-currency">
+            {game.icon === "diamond" ? <Diamond size={12} /> : <Coins size={12} />}
+            {game.currency}
+          </span>
+          <span className="game-card-meta-dot" aria-hidden="true" />
+          <span>Instant top-up</span>
         </p>
-        <Button variant="outline" asChild className="w-full">
+        <Button variant="outline" asChild className="w-full game-card-cta">
           <Link to="/games/$game" params={{ game: game.id }}>
-            View top-ups <ArrowRight />
+            <span>View top-ups</span>
+            <span className="game-card-cta-icon">
+              <ArrowRight size={13} />
+            </span>
           </Link>
         </Button>
       </div>
@@ -660,9 +748,15 @@ export function GameCard({ game }: { game: CatalogGame }) {
   );
 }
 
-export function GameGrid({ items = [] }: { items?: readonly CatalogGame[] }) {
+export function GameGrid({
+  items = [],
+  variant = "default",
+}: {
+  items?: readonly CatalogGame[];
+  variant?: "default" | "rich";
+}) {
   return (
-    <div className="game-grid">
+    <div className={`game-grid${variant === "rich" ? " game-grid--rich" : ""}`}>
       {items.map((game) => (
         <GameCard key={game.id} game={game} />
       ))}
@@ -703,7 +797,7 @@ export function CatalogGrid({ items }: { items?: readonly CatalogGame[] }) {
     );
   const list = items ?? data ?? [];
   if (list.length === 0) return <EmptyState />;
-  return <GameGrid items={list} />;
+  return <GameGrid items={list} variant="rich" />;
 }
 
 export function Steps({ full = false }: { full?: boolean }) {
