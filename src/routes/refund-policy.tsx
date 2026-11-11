@@ -16,6 +16,7 @@ export const Route = createFileRoute("/refund-policy")({
     pageHead(
       "Refund Policy",
       "Current payment, wallet deposit, and order refund availability for HASA GOLD STORE.",
+      { path: "/refund-policy" },
     ),
   component: RefundPolicyPage,
 });

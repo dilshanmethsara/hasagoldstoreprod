@@ -25,6 +25,7 @@ import { Route as PrivacyPolicyRouteImport } from './routes/privacy-policy'
 import { Route as RefundPolicyRouteImport } from './routes/refund-policy'
 import { Route as SearchRouteImport } from './routes/search'
 import { Route as SignupRouteImport } from './routes/signup'
+import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as StatusRouteImport } from './routes/status'
 import { Route as SupportRouteImport } from './routes/support'
 import { Route as AccountsIndexRouteImport } from './routes/accounts.index'
@@ -128,6 +129,11 @@ const SearchRoute = SearchRouteImport.update({
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
   path: '/signup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
+  id: '/sitemap.xml',
+  path: '/sitemap.xml',
   getParentRoute: () => rootRouteImport,
 } as any)
 const StatusRoute = StatusRouteImport.update({
@@ -268,6 +274,7 @@ export interface FileRoutesByFullPath {
   '/refund-policy': typeof RefundPolicyRoute
   '/search': typeof SearchRoute
   '/signup': typeof SignupRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/status': typeof StatusRoute
   '/support': typeof SupportRoute
   '/accounts/$account': typeof AccountsAccountRoute
@@ -306,6 +313,7 @@ export interface FileRoutesByTo {
   '/refund-policy': typeof RefundPolicyRoute
   '/search': typeof SearchRoute
   '/signup': typeof SignupRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/status': typeof StatusRoute
   '/support': typeof SupportRoute
   '/accounts/$account': typeof AccountsAccountRoute
@@ -349,6 +357,7 @@ export interface FileRoutesById {
   '/refund-policy': typeof RefundPolicyRoute
   '/search': typeof SearchRoute
   '/signup': typeof SignupRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/status': typeof StatusRoute
   '/support': typeof SupportRoute
   '/accounts/$account': typeof AccountsAccountRoute
@@ -393,6 +402,7 @@ export interface FileRouteTypes {
     | '/refund-policy'
     | '/search'
     | '/signup'
+    | '/sitemap.xml'
     | '/status'
     | '/support'
     | '/accounts/$account'
@@ -431,6 +441,7 @@ export interface FileRouteTypes {
     | '/refund-policy'
     | '/search'
     | '/signup'
+    | '/sitemap.xml'
     | '/status'
     | '/support'
     | '/accounts/$account'
@@ -473,6 +484,7 @@ export interface FileRouteTypes {
     | '/refund-policy'
     | '/search'
     | '/signup'
+    | '/sitemap.xml'
     | '/status'
     | '/support'
     | '/accounts/$account'
@@ -516,6 +528,7 @@ export interface RootRouteChildren {
   RefundPolicyRoute: typeof RefundPolicyRoute
   SearchRoute: typeof SearchRoute
   SignupRoute: typeof SignupRoute
+  SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   StatusRoute: typeof StatusRoute
   SupportRoute: typeof SupportRoute
 }
@@ -632,6 +645,13 @@ declare module '@tanstack/react-router' {
       path: '/signup'
       fullPath: '/signup'
       preLoaderRoute: typeof SignupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sitemap.xml': {
+      id: '/sitemap.xml'
+      path: '/sitemap.xml'
+      fullPath: '/sitemap.xml'
+      preLoaderRoute: typeof SitemapDotxmlRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/status': {
@@ -902,6 +922,7 @@ const rootRouteChildren: RootRouteChildren = {
   RefundPolicyRoute: RefundPolicyRoute,
   SearchRoute: SearchRoute,
   SignupRoute: SignupRoute,
+  SitemapDotxmlRoute: SitemapDotxmlRoute,
   StatusRoute: StatusRoute,
   SupportRoute: SupportRoute,
 }

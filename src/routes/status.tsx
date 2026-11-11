@@ -23,6 +23,7 @@ export const Route = createFileRoute("/status")({
     pageHead(
       "Service Status",
       "Live API availability and current payment, catalog, and fulfillment disclosures for HASA GOLD STORE.",
+      { path: "/status" },
     ),
   component: StatusPage,
 });

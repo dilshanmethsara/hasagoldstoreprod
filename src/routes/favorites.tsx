@@ -6,7 +6,11 @@ import { pageHead } from "@/lib/store-data";
 import { Button } from "@/components/ui/button";
 export const Route = createFileRoute("/favorites")({
   head: () =>
-    pageHead("Your favorites", "Keep your favorite games together while browsing HASA GOLD STORE."),
+    pageHead(
+      "Your favorites",
+      "Keep your favorite games together while browsing HASA GOLD STORE.",
+      { noIndex: true },
+    ),
   component: FavoritesPage,
 });
 function FavoritesPage() {

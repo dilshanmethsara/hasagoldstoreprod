@@ -6,6 +6,7 @@ export const Route = createFileRoute("/dashboard/")({
     pageHead(
       "Your dashboard",
       "Your games, favorites, and recently viewed games. HASA GOLD STORE.",
+      { noIndex: true },
     ),
   component: DashboardOverview,
 });

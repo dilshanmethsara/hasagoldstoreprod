@@ -8,6 +8,7 @@ export const Route = createFileRoute("/how-it-works")({
     pageHead(
       "How it works",
       "Learn how to browse the live game catalog and create an unpaid order.",
+      { path: "/how-it-works" },
     ),
   component: HowPage,
 });

@@ -10,6 +10,7 @@ export const Route = createFileRoute("/support")({
     pageHead(
       "Support & FAQ",
       "Find answers about games, account preferences, and order availability at HASA GOLD STORE.",
+      { path: "/support" },
     ),
   component: SupportPage,
 });

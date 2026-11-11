@@ -9,7 +9,9 @@ export const Route = createFileRoute("/search")({
     q: typeof search["q"] === "string" ? search["q"] : "",
   }),
   head: () =>
-    pageHead("Search games", "Find a game or currency in the HASA GOLD STORE top-up collection."),
+    pageHead("Search games", "Find a game or currency in the HASA GOLD STORE top-up collection.", {
+      noIndex: true,
+    }),
   component: SearchPage,
 });
 function SearchPage() {

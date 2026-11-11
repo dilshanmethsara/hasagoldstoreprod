@@ -31,8 +31,36 @@ export const faqs = [
   },
 ];
 
-export function pageHead(title: string, description: string) {
+export function pageHead(
+  title: string,
+  description: string,
+  options: { path?: string; noIndex?: boolean; image?: string } = {},
+) {
+  const cleanTitle = title.replace(/\s*\|\s*HASA GOLD STORE\s*$/i, "");
+  const fullTitle = `${cleanTitle} | HASA GOLD STORE`;
   return {
-    meta: [{ title: `${title} | HASA GOLD STORE` }, { name: "description", content: description }],
+    meta: [
+      { title: fullTitle },
+      { name: "description", content: description },
+      { property: "og:type", content: "website" },
+      { property: "og:site_name", content: "HASA GOLD STORE" },
+      { property: "og:title", content: fullTitle },
+      { property: "og:description", content: description },
+      { property: "og:image", content: options.image ?? "https://hasagold.store/brand-share.svg" },
+      { name: "twitter:card", content: "summary" },
+      { name: "twitter:title", content: fullTitle },
+      { name: "twitter:description", content: description },
+      { name: "twitter:image", content: options.image ?? "https://hasagold.store/brand-share.svg" },
+      { property: "og:url", content: `https://hasagold.store${options.path ?? "/"}` },
+      { name: "twitter:url", content: `https://hasagold.store${options.path ?? "/"}` },
+      {
+        name: "robots",
+        content:
+          options.noIndex || !options.path
+            ? "noindex,follow"
+            : "index,follow,max-image-preview:large",
+      },
+    ],
+    links: [{ rel: "canonical", href: `https://hasagold.store${options.path ?? "/"}` }],
   };
 }

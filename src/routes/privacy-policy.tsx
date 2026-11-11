@@ -24,6 +24,7 @@ export const Route = createFileRoute("/privacy-policy")({
     pageHead(
       "Privacy Policy",
       "Learn what account, Player ID, order, and wallet information HASA GOLD STORE stores and how it is used.",
+      { path: "/privacy-policy" },
     ),
   component: PrivacyPolicyPage,
 });

@@ -6,6 +6,7 @@ export const Route = createFileRoute("/admin/topup-failures")({
     pageHead(
       "Top-up failures",
       "Review automatic Free Fire top-ups that Nexaura reported as failed or unconfirmed.",
+      { noIndex: true },
     ),
   component: AdminTopupFailures,
 });

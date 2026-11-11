@@ -1,4 +1,4 @@
-﻿import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { AdminOrders } from "@/components/admin-ui";
 import { pageHead } from "@/lib/store-data";
 export const Route = createFileRoute("/admin/orders")({
@@ -6,6 +6,7 @@ export const Route = createFileRoute("/admin/orders")({
     pageHead(
       "Orders",
       "Review customer payment proofs and update tracked order and payment statuses.",
+      { noIndex: true },
     ),
   component: AdminOrders,
 });

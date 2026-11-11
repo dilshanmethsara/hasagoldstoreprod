@@ -21,6 +21,7 @@ export const Route = createFileRoute("/accounts/")({
     pageHead(
       "Game Accounts",
       "Browse game account listings. Account verification, payment, and credential transfers are not offered; game top-ups are available through the live catalog.",
+      { noIndex: true },
     ),
   component: AccountsPage,
 });

@@ -101,21 +101,60 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
           "Shop premium game top-ups in Sri Lanka at HASA GOLD STORE. Browse available games and packages in our live catalog.",
       },
       { property: "og:type", content: "website" },
+      { property: "og:title", content: "HASA GOLD STORE | Premium Game Top-Ups in Sri Lanka" },
+      {
+        property: "og:description",
+        content:
+          "Shop premium game top-ups in Sri Lanka at HASA GOLD STORE. Browse available games and packages in our live catalog.",
+      },
+      { property: "og:site_name", content: "HASA GOLD STORE" },
+      { property: "og:image", content: "https://hasagold.store/brand-share.svg" },
       { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:image", content: "https://hasagold.store/brand-share.svg" },
       { name: "theme-color", content: "#171714" },
+      { name: "robots", content: "index,follow,max-image-preview:large" },
     ],
     links: [
       {
         rel: "stylesheet",
         href: appCss,
       },
-      { rel: "icon", href: "/favicon.svg?v=2", type: "image/svg+xml" },
-      { rel: "shortcut icon", href: "/favicon.svg?v=2", type: "image/svg+xml" },
+      { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
+      { rel: "canonical", href: "https://hasagold.store/" },
+      { rel: "apple-touch-icon", href: "/favicon.svg" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
         rel: "stylesheet",
         href: "https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@400;500;600;700;800&display=swap",
+      },
+    ],
+    scripts: [
+      {
+        type: "application/ld+json",
+        children: JSON.stringify({
+          "@context": "https://schema.org",
+          "@graph": [
+            {
+              "@type": "Organization",
+              "@id": "https://hasagold.store/#organization",
+              name: "HASA GOLD STORE",
+              url: "https://hasagold.store/",
+              logo: "https://hasagold.store/brand-share.svg",
+              email: "hasaplaysofficial@gmail.com",
+              telephone: "+94763046704",
+              areaServed: { "@type": "Country", name: "Sri Lanka" },
+            },
+            {
+              "@type": "WebSite",
+              "@id": "https://hasagold.store/#website",
+              name: "HASA GOLD STORE",
+              url: "https://hasagold.store/",
+              publisher: { "@id": "https://hasagold.store/#organization" },
+              inLanguage: "en",
+            },
+          ],
+        }),
       },
     ],
   }),

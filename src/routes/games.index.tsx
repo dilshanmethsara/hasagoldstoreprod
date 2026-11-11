@@ -16,6 +16,7 @@ export const Route = createFileRoute("/games/")({
     pageHead(
       "All games",
       "Browse gaming top-ups for Free Fire, Blood Strike, PUBG Mobile, and Call of Duty: Mobile at HASA GOLD STORE.",
+      { path: "/games" },
     ),
   component: GamesPage,
 });

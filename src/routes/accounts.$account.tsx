@@ -22,6 +22,7 @@ export const Route = createFileRoute("/accounts/$account")({
     return pageHead(
       "Game account listing",
       `Review current game account listing ${params.account} from the HASA GOLD STORE catalog.`,
+      { noIndex: true },
     );
   },
   component: AccountDetailPage,

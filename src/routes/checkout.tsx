@@ -323,7 +323,10 @@ export const Route = createFileRoute("/checkout")({
     server: (search["server"] as string) || "",
     method: (search["method"] as string) || "wallet",
   }),
-  head: () => pageHead("Checkout", "Review your top-up and confirm your HASA GOLD STORE order."),
+  head: () =>
+    pageHead("Checkout", "Review your top-up and confirm your HASA GOLD STORE order.", {
+      noIndex: true,
+    }),
   component: CheckoutPage,
 });
 

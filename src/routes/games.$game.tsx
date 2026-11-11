@@ -10,11 +10,38 @@ import { useGame, useProducts } from "@/lib/firestore";
 
 export const Route = createFileRoute("/games/$game")({
   loader: ({ params }) => params.game,
-  head: ({ loaderData }) =>
-    pageHead(
-      "Game top-up",
-      `Browse current game top-up packages for ${loaderData ?? "this game"} in the HASA GOLD STORE catalog.`,
-    ),
+  head: ({ loaderData }) => {
+    const labels: Record<string, { title: string; description: string }> = {
+      "free-fire": {
+        title: "Free Fire Top Up Sri Lanka | Diamonds & Memberships",
+        description:
+          "Check Free Fire Diamond and membership package availability in the HASA GOLD STORE live catalog. See current options before placing an order.",
+      },
+      "blood-strike": {
+        title: "Blood Strike Gold Top Up Sri Lanka",
+        description:
+          "Check Blood Strike Gold package availability in the HASA GOLD STORE live catalog. See current options before placing an order.",
+      },
+    };
+    const metadata = labels[loaderData ?? ""];
+    if (!metadata) {
+      return pageHead("Game not found", "This game is not available in the current catalog.", {
+        noIndex: true,
+      });
+    }
+    const gamePath = `/games/${loaderData ?? ""}`;
+    const sharedHead = pageHead(metadata.title, metadata.description, {
+      path: gamePath,
+      image: "https://hasagold.store/assets/blood-strike-CHu60L3z.jpg",
+    });
+    return {
+      ...sharedHead,
+      meta: [
+        ...sharedHead.meta,
+        { property: "og:image:alt", content: `${loaderData} game top-up packages` },
+      ],
+    };
+  },
   component: GamePage,
   notFoundComponent: () => (
     <div className="container page-content">

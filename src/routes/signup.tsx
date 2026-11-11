@@ -6,7 +6,11 @@ export const Route = createFileRoute("/signup")({
     redirect: safeReturn(search["redirect"]),
   }),
   head: () =>
-    pageHead("Sign up", "Create your HASA GOLD STORE account with secure Firebase authentication."),
+    pageHead(
+      "Sign up",
+      "Create your HASA GOLD STORE account with secure Firebase authentication.",
+      { noIndex: true },
+    ),
   component: Page,
 });
 function Page() {

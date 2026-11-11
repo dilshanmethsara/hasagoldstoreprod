@@ -7,7 +7,8 @@ export const Route = createFileRoute("/admin-login")({
   validateSearch: (search: Record<string, unknown>) => ({
     redirect: safeReturn(search["redirect"]),
   }),
-  head: () => pageHead("Admin sign in", "Sign in to the HASA GOLD STORE admin panel."),
+  head: () =>
+    pageHead("Admin sign in", "Sign in to the HASA GOLD STORE admin panel.", { noIndex: true }),
   component: Page,
 });
 

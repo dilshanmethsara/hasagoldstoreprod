@@ -3,6 +3,7 @@ import { AdminUsers } from "@/components/admin-ui";
 import { pageHead } from "@/lib/store-data";
 
 export const Route = createFileRoute("/admin/users")({
-  head: () => pageHead("Customer accounts", "Manage HASA GOLD STORE customer sign-in."),
+  head: () =>
+    pageHead("Customer accounts", "Manage HASA GOLD STORE customer sign-in.", { noIndex: true }),
   component: AdminUsers,
 });

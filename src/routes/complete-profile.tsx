@@ -12,7 +12,9 @@ export const Route = createFileRoute("/complete-profile")({
     redirect: safeReturn(search["redirect"]),
   }),
   head: () =>
-    pageHead("Complete your profile", "Add the required customer details to access your account."),
+    pageHead("Complete your profile", "Add the required customer details to access your account.", {
+      noIndex: true,
+    }),
   component: CompleteProfilePage,
 });
 

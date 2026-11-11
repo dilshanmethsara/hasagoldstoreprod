@@ -10,6 +10,7 @@ export const Route = createFileRoute("/login")({
     pageHead(
       "Login",
       "Log in to your HASA GOLD STORE account with secure Firebase authentication.",
+      { noIndex: true },
     ),
   component: Page,
 });

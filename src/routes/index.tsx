@@ -26,6 +26,7 @@ export const Route = createFileRoute("/")({
     pageHead(
       "HASA GOLD STORE | Premium Game Top-Ups in Sri Lanka",
       "Browse premium game top-ups and current package availability in Sri Lanka.",
+      { path: "/" },
     ),
   component: Index,
 });

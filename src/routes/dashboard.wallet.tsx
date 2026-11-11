@@ -7,6 +7,7 @@ export const Route = createFileRoute("/dashboard/wallet")({
     pageHead(
       "HASA Gold Wallet",
       "Review verified eZ Cash deposits and administrator wallet adjustments with their reasons. Wallet spending and withdrawals are unavailable.",
+      { noIndex: true },
     ),
   component: DashboardWallet,
 });

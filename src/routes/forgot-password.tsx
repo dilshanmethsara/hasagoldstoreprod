@@ -9,6 +9,7 @@ export const Route = createFileRoute("/forgot-password")({
     pageHead(
       "Forgot password",
       "Reset your HASA GOLD STORE password. We will email you a secure reset link.",
+      { noIndex: true },
     ),
   component: Page,
 });
